@@ -11,7 +11,12 @@ ras-balancer/
 │   └── ras_balancer/
 │       ├── __init__.py
 │       ├── core.py
-└── tests/
-    ├── __init__.py
-    ├── test_core.py
+│       ├── generator.py
+│       ├── shocker.py
+│       └── types.py
+├── tests/
+│   ├── __init__.py
+│   ├── test_core.py
+│   ├── test_generator.py
+│   └── test_shocker.py
 ```

@@ -1,9 +1,7 @@
 import unittest
 import numpy as np
 import scipy.sparse as sp
-from ras_library import (
-    RASBalancer
-)
+from ras_balancer import RASBalancer
 
 
 class TestRASBalancer(unittest.TestCase):

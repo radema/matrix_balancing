@@ -1,8 +1,7 @@
 import unittest
 import numpy as np
 import scipy.sparse as sp
-from ras_balancer import RASBalancer
-
+from ras_balancer import RASBalancer, BalanceStatus
 
 class TestRASBalancer(unittest.TestCase):
     def setUp(self):
@@ -75,3 +74,6 @@ class TestRASBalancer(unittest.TestCase):
         unequal_col_sums = self.target_col_sums * 2
         with self.assertRaises(ValueError):
             self.balancer.balance(self.test_matrix, self.target_row_sums, unequal_col_sums)
+
+if __name__ == '__main__':
+    unittest.main()

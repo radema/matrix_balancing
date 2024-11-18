@@ -1,9 +1,7 @@
 import unittest
 import numpy as np
 import scipy.sparse as sp
-from ras_library import (
-    MatrixGenerator
-)
+from ras_balancer import MatrixGenerator
 
 class TestMatrixGenerator(unittest.TestCase):
     def setUp(self):
@@ -55,3 +53,6 @@ class TestMatrixGenerator(unittest.TestCase):
         self.assertTrue(np.allclose(actual_row_sums, row_sums, rtol=1e-6))
         self.assertTrue(np.allclose(actual_col_sums, col_sums, rtol=1e-6))
         self.assertTrue(np.allclose(matrix.sum(), self.total_sum, rtol=1e-6))
+
+if __name__ == '__main__':
+    unittest.main()

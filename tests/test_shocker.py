@@ -1,14 +1,6 @@
 import unittest
 import numpy as np
-import scipy.sparse as sp
-from ras_library import (
-    RASBalancer, 
-    MatrixGenerator, 
-    MatrixShocker,
-    BalanceStatus,
-    ShockType,
-    balance_matrix
-)
+from ras_balancer import MatrixGenerator, MatrixShocker, ShockType
 
 class TestMatrixShocker(unittest.TestCase):
     def setUp(self):
@@ -110,3 +102,6 @@ class TestMatrixShocker(unittest.TestCase):
             result = shock_method(matrix_with_zeros)
             zero_mask = matrix_with_zeros == 0
             self.assertTrue(np.all(result.shocked_matrix[zero_mask] == 0))
+
+if __name__ == '__main__':
+    unittest.main()

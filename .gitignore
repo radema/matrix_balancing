@@ -43,3 +43,6 @@ htmlcov/
 # Version
 src/ras_balancer/_version.py
 dev/
+
+# Log
+logs/

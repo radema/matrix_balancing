@@ -47,3 +47,6 @@ dev/
 # (Temporary) doc
 doc/CHANGELOG.md
 doc/API_REFERENCE.md
+
+# Log
+*.log

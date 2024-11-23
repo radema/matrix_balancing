@@ -31,7 +31,7 @@ class TestMatrixGenerator(unittest.TestCase):
 
     def test_generate_balanced_sparse(self):
         """Test generation of balanced sparse matrices."""
-        density = 0.01
+        density = 0.1
         matrix, row_sums, col_sums = MatrixGenerator.generate_balanced_sparse(
             self.rows,
             self.cols,

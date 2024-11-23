@@ -10,7 +10,7 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 # Define paths
-LOG_DIR = "logs"
+LOG_DIR = "logs/test_logs"
 LOG_FILE = os.path.join(LOG_DIR, f"test_report_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log")
 TESTS_DIR = "tests"
 

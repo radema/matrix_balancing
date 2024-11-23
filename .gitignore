@@ -44,5 +44,9 @@ htmlcov/
 src/ras_balancer/_version.py
 dev/
 
+# (Temporary) doc
+doc/CHANGELOG.md
+doc/API_REFERENCE.md
+
 # Log
 *.log

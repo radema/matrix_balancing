@@ -43,3 +43,7 @@ htmlcov/
 # Version
 src/ras_balancer/_version.py
 dev/
+
+# (Temporary) doc
+doc/CHANGELOG.md
+doc/API_REFERECE.md

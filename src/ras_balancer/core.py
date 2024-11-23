@@ -5,6 +5,7 @@ import numpy as np
 from numpy.typing import NDArray
 import scipy.sparse as sp
 import logging
+import warnings
 from typing import Union, Optional
 from .types import BalanceStatus, BalanceCheckResult, RASResult
 
@@ -71,6 +72,135 @@ class RASBalancer:
 
     # [Previous methods from RASBalancer would go here]
     # _validate_inputs, _should_use_sparse, _process_dense_chunk, balance
+    def _validate_inputs(
+        self,
+        matrix: Union[NDArray, sp.spmatrix],
+        target_row_sums: NDArray,
+        target_col_sums: NDArray
+    ) -> None:
+        """Validate input dimensions and values."""
+        if matrix.shape[0] != len(target_row_sums) or matrix.shape[1] != len(target_col_sums):
+            raise ValueError("Target sum dimensions must match matrix dimensions")
+            
+        if np.any(target_row_sums < 0) or np.any(target_col_sums < 0):
+            raise ValueError("Target sums must be non-negative")
+            
+        if not np.allclose(target_row_sums.sum(), target_col_sums.sum(), rtol=1e-5):
+            raise ValueError("Sum of target row sums must equal sum of target column sums")
+
+    def _should_use_sparse(self, matrix: Union[NDArray, sp.spmatrix]) -> bool:
+        """Determine if sparse matrix operations should be used."""
+        if self.use_sparse is not None:
+            return self.use_sparse
+            
+        if sp.issparse(matrix):
+            return True
+            
+        # For dense matrices, estimate sparsity
+        if isinstance(matrix, np.ndarray):
+            sparsity = np.count_nonzero(matrix) / matrix.size
+            return sparsity < 0.1
+            
+        return False
+
+    def _process_dense_chunk(
+        self,
+        matrix: NDArray,
+        r: NDArray,
+        s: NDArray,
+        start: int,
+        end: int
+    ) -> NDArray:
+        """Process a chunk of a dense matrix for memory efficiency."""
+        chunk = matrix[start:end, :]
+        chunk = np.multiply(chunk, r[start:end, np.newaxis])
+        chunk = np.multiply(chunk, s)
+        return chunk
+
+    def balance(
+        self,
+        matrix: Union[NDArray, sp.spmatrix],
+        target_row_sums: NDArray,
+        target_col_sums: NDArray,
+        initial_correction: bool = True
+    ) -> RASResult:
+        """
+        Balance a matrix using the RAS algorithm.
+
+        Parameters
+        ----------
+        matrix : Union[NDArray, sp.spmatrix]
+            Input matrix to balance
+        target_row_sums : NDArray
+            Target row sums
+        target_col_sums : NDArray
+            Target column sums
+        initial_correction : bool, optional
+            Apply initial scaling correction, by default True
+
+        Returns
+        -------
+        RASResult
+            Results containing balanced matrix and convergence information
+        """
+        self._validate_inputs(matrix, target_row_sums, target_col_sums)
+        use_sparse = self._should_use_sparse(matrix)
+        
+        # Convert to sparse if needed
+        if use_sparse and not sp.issparse(matrix):
+            matrix = sp.csr_matrix(matrix)
+        elif not use_sparse and sp.issparse(matrix):
+            matrix = matrix.toarray()
+            
+        # Work with copies
+        X = matrix.copy()
+        target_row_sums = np.asarray(target_row_sums, dtype=np.float64)
+        target_col_sums = np.asarray(target_col_sums, dtype=np.float64)
+        
+        # Initial correction to improve convergence
+        if initial_correction:
+            total_sum = target_row_sums.sum()
+            X = X * (total_sum / X.sum())
+            
+        for iteration in range(self.max_iter):
+            # Row scaling
+            row_sums = X.sum(axis=1).A1 if use_sparse else X.sum(axis=1)
+            r = np.divide(target_row_sums, row_sums, where=row_sums!=0)
+            
+            if use_sparse:
+                X = sp.diags(r) @ X
+            else:
+                # Process large dense matrices in chunks
+                if X.shape[0] > self.chunk_size:
+                    new_X = np.empty_like(X)
+                    for i in range(0, X.shape[0], self.chunk_size):
+                        end = min(i + self.chunk_size, X.shape[0])
+                        new_X[i:end] = self._process_dense_chunk(X, r, np.ones(X.shape[1]), i, end)
+                    X = new_X
+                else:
+                    X = np.multiply(X, r[:, np.newaxis])
+            
+            # Column scaling
+            col_sums = X.sum(axis=0).A1 if use_sparse else X.sum(axis=0)
+            s = np.divide(target_col_sums, col_sums, where=col_sums!=0)
+            
+            if use_sparse:
+                X = X @ sp.diags(s)
+            else:
+                X = np.multiply(X, s)
+            
+            # Check convergence
+            current_row_sums = X.sum(axis=1).A1 if use_sparse else X.sum(axis=1)
+            current_col_sums = X.sum(axis=0).A1 if use_sparse else X.sum(axis=0)
+            
+            row_error = np.max(np.abs(current_row_sums - target_row_sums))
+            col_error = np.max(np.abs(current_col_sums - target_col_sums))
+            
+            if max(row_error, col_error) < self.tolerance:
+                return RASResult(X, iteration + 1, True, row_error, col_error)
+                
+        warnings.warn("RAS algorithm did not converge within maximum iterations")
+        return RASResult(X, self.max_iter, False, row_error, col_error)
 
 def balance_matrix(
     matrix: Union[NDArray, sp.spmatrix],

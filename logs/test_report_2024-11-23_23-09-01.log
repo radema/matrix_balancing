@@ -1,0 +1,45 @@
+2024-11-23 23:09:01,928 - INFO - ========== TEST SUMMARY ==========
+2024-11-23 23:09:01,929 - INFO - Tests run: 3
+2024-11-23 23:09:01,929 - INFO - Errors: 3
+2024-11-23 23:09:01,929 - INFO - Failures: 0
+2024-11-23 23:09:01,929 - ERROR - Some tests failed or encountered errors.
+2024-11-23 23:09:01,929 - ERROR - Errors:
+2024-11-23 23:09:01,929 - ERROR - Test: test_core (unittest.loader._FailedTest)
+Error:
+ImportError: Failed to import test module: test_core
+Traceback (most recent call last):
+  File "/Users/rauldemaio/opt/anaconda3/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Users/rauldemaio/opt/anaconda3/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/rauldemaio/Projects Local/matrix_balancing/tests/test_core.py", line 4, in <module>
+    from ras_balancer import RASBalancer, BalanceStatus
+ModuleNotFoundError: No module named 'ras_balancer'
+
+
+2024-11-23 23:09:01,929 - ERROR - Test: test_generator (unittest.loader._FailedTest)
+Error:
+ImportError: Failed to import test module: test_generator
+Traceback (most recent call last):
+  File "/Users/rauldemaio/opt/anaconda3/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Users/rauldemaio/opt/anaconda3/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/rauldemaio/Projects Local/matrix_balancing/tests/test_generator.py", line 4, in <module>
+    from ras_balancer import MatrixGenerator
+ModuleNotFoundError: No module named 'ras_balancer'
+
+
+2024-11-23 23:09:01,929 - ERROR - Test: test_shocker (unittest.loader._FailedTest)
+Error:
+ImportError: Failed to import test module: test_shocker
+Traceback (most recent call last):
+  File "/Users/rauldemaio/opt/anaconda3/lib/python3.9/unittest/loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Users/rauldemaio/opt/anaconda3/lib/python3.9/unittest/loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "/Users/rauldemaio/Projects Local/matrix_balancing/tests/test_shocker.py", line 3, in <module>
+    from ras_balancer import MatrixGenerator, MatrixShocker, ShockType
+ModuleNotFoundError: No module named 'ras_balancer'
+
+

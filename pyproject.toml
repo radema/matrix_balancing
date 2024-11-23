@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "ras-balancer"
+version = "0.1.0"
+description = "Code project for balancing algorithms"
+authors = ["Raul De Maio <rauldemaio@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "3.9"
+numpy = "^2.1.3"
+scipy = "^1.14.1"
+logging = "^0.4.9.6"
+typing = "0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

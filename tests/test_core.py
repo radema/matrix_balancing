@@ -2,6 +2,10 @@ import numpy as np
 import scipy.sparse as sp
 import pytest
 from ras_balancer import RASBalancer
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 
 class TestRASBalancer:

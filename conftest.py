@@ -20,11 +20,6 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
-# Add a File Handler explicitly
-file_handler = logging.FileHandler(LOG_FILE)
-
-logging.getLogger().addHandler(file_handler)
-
 
 def pytest_sessionstart(session):
     """

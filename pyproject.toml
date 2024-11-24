@@ -14,7 +14,7 @@ logging = "^0.4.9.6"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.10.0"
-flake8 = "^7.1.1"
+flake8 = "^7.0.0"
 mypy = "^1.13.0"
 pytest = "^8.3.3"
 pytest-cov = "^6.0.0"
@@ -25,9 +25,9 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.black]
-line-length = 88
+line-length = 100
 target-version = ['py310']
 
 [tool.flake8]
-max-line-length = 88
+max-line-length = 100
 exclude = ["logs/", "__pycache__",".git","*.pyc"]

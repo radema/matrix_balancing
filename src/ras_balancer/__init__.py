@@ -12,7 +12,12 @@ __author__ = "Raul De Maio"
 __license__ = "MIT"
 __all__ = ["core", "generator", "shocker", "types"]
 
-from .core import *
-from .generator import *
-from .shocker import *
-from .types import *
+from . import core
+from . import generator
+from . import shocker
+from . import types
+
+# Explicitly import relevant classes for top-level access
+from .core import RASBalancer  # noqa: F401
+from .generator import MatrixGenerator  # noqa: F401
+from .shocker import MatrixShocker, ShockType  # noqa: F401

@@ -19,10 +19,9 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 # Configure logging
 logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    filename=LOG_FILE, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
 
 def main():
     # Create a test loader and discover tests in the tests folder
@@ -38,7 +37,7 @@ def main():
     logging.info(f"Tests run: {result.testsRun}")
     logging.info(f"Errors: {len(result.errors)}")
     logging.info(f"Failures: {len(result.failures)}")
-    
+
     if not result.wasSuccessful():
         logging.error("Some tests failed or encountered errors.")
         if result.failures:
@@ -51,6 +50,7 @@ def main():
                 logging.error(f"Test: {test}\nError:\n{err}")
     else:
         logging.info("All tests passed successfully!")
+
 
 if __name__ == "__main__":
     main()

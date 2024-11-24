@@ -12,7 +12,7 @@ __author__ = "Raul De Maio"
 __license__ = "MIT"
 __all__ = ["core", "generator", "shocker", "types"]
 
-from .core import *
-from .generator import *
-from .shocker import *
-from .types import *
+import core
+import generator
+import shocker
+import types

@@ -50,3 +50,5 @@ doc/API_REFERENCE.md
 
 # Log
 *.log
+# Data
+*.csv

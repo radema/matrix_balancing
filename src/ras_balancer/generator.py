@@ -5,7 +5,7 @@ import numpy as np
 import scipy.sparse as sp
 from typing import Tuple
 from numpy.typing import NDArray
-from .core import RASBalancer
+from .core import balance_matrix
 
 
 class MatrixGenerator:
@@ -23,10 +23,30 @@ class MatrixGenerator:
         rows: int,
         cols: int,
         total_sum: float = 1000.0,
-        min_value: float = 0.1,
+        method: str = "RAS",
         noise_level: float = 0.1,
     ) -> Tuple[NDArray, NDArray, NDArray]:
-        """Generate a random balanced dense matrix."""
+        """
+        Generate a random balanced dense matrix using RAS or GRAS.
+
+        Parameters
+        ----------
+        rows : int
+            Number of rows in the matrix.
+        cols : int
+            Number of columns in the matrix.
+        total_sum : float, optional
+            Total sum of the matrix, by default 1000.0.
+        method : str, optional
+            Balancing method ('RAS' or 'GRAS'), by default 'RAS'.
+        noise_level : float, optional
+            Level of noise to add before balancing, by default 0.1.
+
+        Returns
+        -------
+        Tuple[NDArray, NDArray, NDArray]
+            Balanced matrix, row sums, and column sums.
+        """
         row_sums = cls._generate_random_positive_vector(rows, total_sum)
         col_sums = cls._generate_random_positive_vector(cols, total_sum)
 
@@ -38,11 +58,12 @@ class MatrixGenerator:
             noise = np.random.uniform(1 - noise_level, 1 + noise_level, (rows, cols))
             base_matrix *= noise
 
-            balancer = RASBalancer(tolerance=1e-10)
-            result = balancer.balance(base_matrix, row_sums, col_sums)
-            base_matrix = result.balanced_matrix
+        # Balance the matrix using the specified method
+        balanced_matrix = balance_matrix(
+            base_matrix, row_sums, col_sums, method=method, tolerance=1e-10
+        ).balanced_matrix
 
-        return base_matrix, row_sums, col_sums
+        return balanced_matrix, row_sums, col_sums
 
     @classmethod
     def generate_balanced_sparse(
@@ -51,20 +72,45 @@ class MatrixGenerator:
         cols: int,
         density: float = 0.01,
         total_sum: float = 1000.0,
-        min_value: float = 0.1,
+        method: str = "RAS",
     ) -> Tuple[sp.spmatrix, NDArray, NDArray]:
-        """Generate a random balanced sparse matrix."""
+        """
+        Generate a random balanced sparse matrix using RAS or GRAS.
+
+        Parameters
+        ----------
+        rows : int
+            Number of rows in the matrix.
+        cols : int
+            Number of columns in the matrix.
+        density : float, optional
+            Fraction of non-zero elements, by default 0.01.
+        total_sum : float, optional
+            Total sum of the matrix, by default 1000.0.
+        method : str, optional
+            Balancing method ('RAS' or 'GRAS'), by default 'RAS'.
+
+        Returns
+        -------
+        Tuple[sp.spmatrix, NDArray, NDArray]
+            Balanced sparse matrix, row sums, and column sums.
+        """
+        if not (0 <= density <= 1):
+            raise ValueError("Density must be between 0 and 1 inclusive.")
+        
         row_sums = cls._generate_random_positive_vector(rows, total_sum)
         col_sums = cls._generate_random_positive_vector(cols, total_sum)
 
         nnz = int(rows * cols * density)
         row_indices = np.random.choice(rows, nnz)
         col_indices = np.random.choice(cols, nnz)
-        data = np.random.uniform(min_value, 1.0, nnz)
+        data = np.random.uniform(0.1, 1.0, nnz)
 
         matrix = sp.csr_matrix((data, (row_indices, col_indices)), shape=(rows, cols))
 
-        balancer = RASBalancer(tolerance=1e-10, use_sparse=True)
-        result = balancer.balance(matrix, row_sums, col_sums)
+        # Balance the matrix using the specified method
+        balanced_matrix = balance_matrix(
+            matrix, row_sums, col_sums, method=method, tolerance=1e-10
+        ).balanced_matrix
 
-        return result.balanced_matrix, row_sums, col_sums
+        return balanced_matrix, row_sums, col_sums

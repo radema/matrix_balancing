@@ -14,9 +14,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class RASBalancer:
-    """A class for balancing matrices using the RAS algorithm."""
-
+class MatrixBalancerBase:
+    """Base class for matrix balancing algorithms."""
     def __init__(
         self,
         max_iter: int = 1000,
@@ -30,6 +29,29 @@ class RASBalancer:
         self.use_sparse = use_sparse
         self.chunk_size = chunk_size
 
+    def _validate_inputs(self, matrix, target_row_sums, target_col_sums):
+        if matrix.shape[0] != len(target_row_sums) or matrix.shape[1] != len(target_col_sums):
+            raise ValueError("Target sum dimensions must match matrix dimensions")
+        if np.any(target_row_sums < 0) or np.any(target_col_sums < 0):
+            raise ValueError("Target sums must be non-negative")
+        if not np.allclose(target_row_sums.sum(), target_col_sums.sum(), rtol=1e-5):
+            raise ValueError("Sum of target row sums must equal sum of target column sums")
+
+    def _should_use_sparse(self, matrix: Union[NDArray, sp.spmatrix]) -> bool:
+        """Determine if sparse matrix operations should be used."""
+        if self.use_sparse is not None:
+            return self.use_sparse
+
+        if sp.issparse(matrix):
+            return True
+
+        # For dense matrices, estimate sparsity
+        if isinstance(matrix, np.ndarray):
+            sparsity = np.count_nonzero(matrix) / matrix.size
+            return sparsity < 0.1
+
+        return False
+    
     @staticmethod
     def check_balance(
         matrix: Union[NDArray, sp.spmatrix],
@@ -74,48 +96,18 @@ class RASBalancer:
             col_deviations=col_deviations,
             is_balanced=row_balanced and col_balanced,
         )
-
-    # [Previous methods from RASBalancer would go here]
-    # _validate_inputs, _should_use_sparse, _process_dense_chunk, balance
-    def _validate_inputs(
-        self,
-        matrix: Union[NDArray, sp.spmatrix],
-        target_row_sums: NDArray,
-        target_col_sums: NDArray,
-    ) -> None:
-        """Validate input dimensions and values."""
-        if matrix.shape[0] != len(target_row_sums) or matrix.shape[1] != len(target_col_sums):
-            raise ValueError("Target sum dimensions must match matrix dimensions")
-
-        if np.any(target_row_sums < 0) or np.any(target_col_sums < 0):
-            raise ValueError("Target sums must be non-negative")
-
-        if not np.allclose(target_row_sums.sum(), target_col_sums.sum(), rtol=1e-5):
-            raise ValueError("Sum of target row sums must equal sum of target column sums")
-
-    def _should_use_sparse(self, matrix: Union[NDArray, sp.spmatrix]) -> bool:
-        """Determine if sparse matrix operations should be used."""
-        if self.use_sparse is not None:
-            return self.use_sparse
-
-        if sp.issparse(matrix):
-            return True
-
-        # For dense matrices, estimate sparsity
-        if isinstance(matrix, np.ndarray):
-            sparsity = np.count_nonzero(matrix) / matrix.size
-            return sparsity < 0.1
-
-        return False
-
-    def _process_dense_chunk(
-        self, matrix: NDArray, r: NDArray, s: NDArray, start: int, end: int
-    ) -> NDArray:
+    
+    def process_dense_chunk(
+            self, matrix: NDArray, r: NDArray, s: NDArray, start: int, end: int
+            ) -> NDArray:
         """Process a chunk of a dense matrix for memory efficiency."""
         chunk = matrix[start:end, :]
         chunk = np.multiply(chunk, r[start:end, np.newaxis])
         chunk = np.multiply(chunk, s)
         return chunk
+    
+class RASBalancer(MatrixBalancerBase):
+    """A class for balancing matrices using the RAS algorithm."""
 
     def balance(
         self,
@@ -154,8 +146,8 @@ class RASBalancer:
 
         # Work with copies
         X = matrix.copy()
-        target_row_sums = np.asarray(target_row_sums, dtype=np.float64)
-        target_col_sums = np.asarray(target_col_sums, dtype=np.float64)
+        target_row_sums = np.asarray(target_row_sums, dtype=np.float64).flatten()
+        target_col_sums = np.asarray(target_col_sums, dtype=np.float64).flatten()
 
         # Initial correction to improve convergence
         if initial_correction:
@@ -201,14 +193,118 @@ class RASBalancer:
 
         warnings.warn("RAS algorithm did not converge within maximum iterations")
         return RASResult(X, self.max_iter, False, row_error, col_error)
+    
 
+class GRASBalancer(MatrixBalancerBase):
+    """Balances matrices using the GRAS algorithm for matrices with both positive and negative values."""
+
+    @staticmethod
+    def invd_sparse(x):
+        with np.errstate(divide='ignore', invalid='ignore'):
+            invd_values = np.where(x != 0, 1.0 / x, 1.0)
+        return sp.diags(invd_values.flatten())
+
+    def balance(self, matrix, target_row_sums, target_col_sums):
+        self._validate_inputs(matrix, target_row_sums, target_col_sums)
+
+        m,n = matrix.shape
+
+        if sp.issparse(matrix):
+            # For sparse matrices, use `.maximum` for efficient operations
+            P = matrix.maximum(0)  # Extract positive part
+            N = matrix.minimum(0).multiply(-1)  # Extract negative part and negate
+        else:
+            # For dense numpy arrays, use `np.maximum` directly
+            P = np.maximum(matrix, 0)  # Extract positive part
+            N = np.maximum(-matrix, 0)  # Extract negative part and negate
+
+        r = np.ones((m, 1))
+        dif = float('inf')
+
+        pr = P.T @ r
+        nr = N.T @ self.invd_sparse(r) @ np.ones((m, 1))
+
+        s = self.invd_sparse(2 * pr) @ (target_col_sums.reshape(-1,1) + np.sqrt(target_col_sums.reshape(-1,1)**2 + 4 * pr * nr))
+        # Handle possible NaNs
+        s = np.nan_to_num(s, nan=1e-10, posinf=1e-10, neginf=1e-10)
+        ss = -self.invd_sparse(target_col_sums.reshape(-1,1)) @ nr
+        s[pr.flatten() == 0] = ss[pr.flatten() == 0]
+
+        s_old = s
+        r_old = r
+
+        for iteration in range(self.max_iter):
+            # Update row and column scaling factors
+
+            ps = P @ s
+            ns = N @ self.invd_sparse(s) @ np.ones((n, 1))
+            r = self.invd_sparse(2 * ps) @ (target_row_sums.reshape(-1,1) + np.sqrt(target_row_sums.reshape(-1,1)**2 + 4 * ps * ns))
+            # Handle possible NaNs
+            r = np.nan_to_num(r, nan=1e-10, posinf=1e-10, neginf=1e-10)            
+            rr = -self.invd_sparse(target_row_sums.reshape(-1,1)) @ ns
+            r[ps.flatten() == 0] = rr[ps.flatten() == 0]
+
+            pr = P.T @ r
+            nr = N.T @ self.invd_sparse(r) @ np.ones((m, 1))
+
+            s = self.invd_sparse(2 * pr) @ (target_col_sums.reshape(-1,1) + np.sqrt(target_col_sums.reshape(-1,1)**2 + 4 * pr * nr))
+            # Handle possible NaNs
+            s = np.nan_to_num(s, nan=1e-10, posinf=1e-10, neginf=1e-10)
+            ss = -self.invd_sparse(target_col_sums.reshape(-1,1)) @ nr
+            s[pr.flatten() == 0] = ss[pr.flatten() == 0]
+
+            s_dif = np.max(np.abs(s - s_old))
+            r_dif = np.max(np.abs(r - r_old))
+
+            dif = max(s_dif, r_dif)
+
+            if (dif < self.tolerance):
+                break
+
+            
+            s_old = s
+            r_old = r
+
+        if dif > self.tolerance:
+            warnings.warn("GRAS algorithm did not converge within the maximum number of iterations")
+            return RASResult(matrix, self.max_iter, False, dif, dif)
+
+        balanced_matrix = sp.diags(r.flatten()) @ P @ sp.diags(s.flatten()) - self.invd_sparse(r) @ N @ self.invd_sparse(s)
+        return RASResult(balanced_matrix, iteration + 1, True, dif, dif)
 
 def balance_matrix(
-    matrix: Union[NDArray, sp.spmatrix],
-    target_row_sums: NDArray,
-    target_col_sums: NDArray,
+    matrix: Union[np.ndarray, sp.spmatrix],
+    target_row_sums: np.ndarray,
+    target_col_sums: np.ndarray,
+    method: str = "RAS",
     **kwargs,
 ) -> RASResult:
-    """Convenience function to balance a matrix using default parameters."""
-    balancer = RASBalancer(**kwargs)
+    """
+    Balances a matrix using the specified method (RAS or GRAS).
+
+    Parameters
+    ----------
+    matrix : Union[np.ndarray, sp.spmatrix]
+        The input matrix to balance.
+    target_row_sums : np.ndarray
+        Target row sums.
+    target_col_sums : np.ndarray
+        Target column sums.
+    method : str, optional
+        The balancing method to use ('RAS' or 'GRAS'), by default 'RAS'.
+    **kwargs
+        Additional parameters passed to the balancer class (e.g., max_iter, tolerance).
+
+    Returns
+    -------
+    RASResult
+        The result of the balancing process.
+    """
+    if method.upper() == "RAS":
+        balancer = RASBalancer(**kwargs)
+    elif method.upper() == "GRAS":
+        balancer = GRASBalancer(**kwargs)
+    else:
+        raise ValueError(f"Unknown balancing method: {method}. Supported methods are 'RAS' and 'GRAS'.")
+
     return balancer.balance(matrix, target_row_sums, target_col_sums)

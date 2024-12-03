@@ -1,7 +1,7 @@
 # types.py
 """Type definitions and dataclasses for the RAS balancing library."""
 
-from typing import Tuple, Union
+from typing import Tuple, Union, Optional
 import numpy as np
 from numpy.typing import NDArray
 import scipy.sparse as sp
@@ -52,7 +52,7 @@ class BalanceCheckResult:
 
 @dataclass
 class RASResult:
-    """Data class to store RAS algorithm results."""
+    """Data class to store RAS/GRAS algorithm results."""
 
     balanced_matrix: Union[NDArray, sp.spmatrix]
     iterations: int
@@ -62,7 +62,7 @@ class RASResult:
 
     def __str__(self) -> str:
         return (
-            f"RAS Result:\n"
+            f"Balancing Result:\n"
             f"Converged: {self.converged} in {self.iterations} iterations\n"
             f"Final errors - Row: {self.row_error:.2e}, Column: {self.col_error:.2e}"
         )
@@ -80,13 +80,33 @@ class ShockResult:
     new_col_sums: NDArray
     shock_type: ShockType
     shock_magnitude: float
-    affected_indices: Union[Tuple[int, int], NDArray]
+    affected_indices: Optional[Union[Tuple[int, int], NDArray]] = None
 
     def __str__(self) -> str:
+        row_change = np.max(np.abs(self.new_row_sums - self.original_row_sums))
+        col_change = np.max(np.abs(self.new_col_sums - self.original_col_sums))
         return (
             f"Shock Result:\n"
             f"Type: {self.shock_type.value}\n"
             f"Magnitude: {self.shock_magnitude:.2e}\n"
-            f"Max Row Sum Change: {np.max(np.abs(self.new_row_sums - self.original_row_sums)):.2e}"
-            f"Max Col Sum Change: {np.max(np.abs(self.new_col_sums - self.original_col_sums)):.2e}"
+            f"Max Row Sum Change: {row_change:.2e}\n"
+            f"Max Col Sum Change: {col_change:.2e}\n"
+        )
+
+
+@dataclass
+class MatrixGenerationResult:
+    """Data class to store the results of matrix generation."""
+
+    generated_matrix: Union[NDArray, sp.spmatrix]
+    row_sums: NDArray
+    col_sums: NDArray
+
+    def __str__(self) -> str:
+        return (
+            f"Matrix Generation Result:\n"
+            f"Matrix Shape: {self.generated_matrix.shape}\n"
+            f"Total Sum: {self.generated_matrix.sum():.2e}\n"
+            f"Row Sums: {self.row_sums}\n"
+            f"Column Sums: {self.col_sums}\n"
         )

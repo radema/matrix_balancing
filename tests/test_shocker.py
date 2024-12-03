@@ -1,11 +1,7 @@
 import numpy as np
+import scipy.sparse as sp
 import pytest
-from ras_balancer import MatrixGenerator, MatrixShocker, ShockType
-import sys
-import os
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
-
+from ras_balancer import MatrixShocker, ShockType,  MatrixGenerator
 
 class TestMatrixShocker:
     @pytest.fixture(autouse=True)
@@ -13,10 +9,13 @@ class TestMatrixShocker:
         """Set up test fixtures."""
         self.rows = 50
         self.cols = 50
-        generated_balanced_matrix = MatrixGenerator.generate_balanced_dense(
-            self.rows, self.cols, total_sum=1000.0
+        self.total_sum = 1000.0
+        self.matrix, self.row_sums, self.col_sums = MatrixGenerator.generate_balanced_dense(
+            self.rows, self.cols, total_sum=self.total_sum
         )
-        self.matrix, self.row_sums, self.col_sums = generated_balanced_matrix
+        self.sparse_matrix, _, _ = MatrixGenerator.generate_balanced_sparse(
+            self.rows, self.cols, density=0.1, total_sum=self.total_sum
+        )
         self.shocker = MatrixShocker(preserve_zeros=True, random_seed=42)
 
     def test_shock_cell(self):
@@ -63,6 +62,29 @@ class TestMatrixShocker:
         unchanged_rows = result.shocked_matrix[mask] - self.matrix[mask]
         assert np.allclose(unchanged_rows, 0)
 
+    def test_shock_column_totals(self):
+        """Test column total shock."""
+        col_indices = [0, 1]
+        magnitudes = [0.1, 0.2]
+        result = self.shocker.shock_column_totals(
+            self.matrix, col_indices=col_indices, magnitudes=magnitudes, relative=True
+        )
+
+        # Check shock type
+        assert result.shock_type == ShockType.COLUMN_TOTAL
+
+        # Check if column totals were modified correctly
+        for idx, mag in zip(col_indices, magnitudes):
+            original_sum = self.matrix[:, idx].sum()
+            shocked_sum = result.shocked_matrix[:, idx].sum()
+            assert np.allclose(shocked_sum, original_sum * (1 + mag))
+
+        # Check if other columns remained unchanged
+        mask = np.ones(self.cols, dtype=bool)
+        mask[col_indices] = False
+        unchanged_cols = result.shocked_matrix[:, mask] - self.matrix[:, mask]
+        assert np.allclose(unchanged_cols, 0)
+
     def test_shock_proportional(self):
         """Test proportional shock."""
         magnitude = 0.1
@@ -79,6 +101,21 @@ class TestMatrixShocker:
         affected_cells = np.count_nonzero(diff_matrix)
         expected_affected = int(self.matrix.size * affected_fraction)
         assert abs(affected_cells - expected_affected) < expected_affected * 0.1
+
+    def test_shock_sparse_matrix(self):
+        """Test shocks on sparse matrices."""
+        magnitude = 0.1
+        result = self.shocker.shock_proportional(
+            self.sparse_matrix, magnitude=magnitude, affected_fraction=0.05
+        )
+
+        # Ensure result is sparse
+        assert sp.issparse(result.shocked_matrix)
+
+        # Check that shocks are applied
+        original_nnz = self.sparse_matrix.nnz
+        shocked_nnz = result.shocked_matrix.nnz
+        assert shocked_nnz == original_nnz
 
     def test_preserve_zeros(self):
         """Test zero preservation in shocks."""
@@ -98,3 +135,15 @@ class TestMatrixShocker:
             result = shock_method(matrix_with_zeros)
             zero_mask = matrix_with_zeros == 0
             assert np.all(result.shocked_matrix[zero_mask] == 0)
+
+    def test_shock_and_rebalance(self):
+        """Test shock and rebalance functionality."""
+        result = self.shocker.shock_and_rebalance(
+            self.matrix, self.row_sums, self.col_sums, method="RAS"
+        )
+
+        # Ensure matrix is rebalanced
+        new_row_sums = result.shocked_matrix.sum(axis=1)
+        new_col_sums = result.shocked_matrix.sum(axis=0)
+        assert np.allclose(new_row_sums, self.row_sums, rtol=1e-6)
+        assert np.allclose(new_col_sums, self.col_sums, rtol=1e-6)

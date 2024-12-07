@@ -191,10 +191,10 @@ class RASBalancer(MatrixBalancerBase):
             col_error = np.max(np.abs(current_col_sums - target_col_sums))
 
             if max(row_error, col_error) < self.tolerance:
-                return RASResult(X, iteration + 1, True, row_error, col_error)
+                return RASResult(X, iteration + 1, True, row_error, col_error, r, s)
 
         warnings.warn("RAS algorithm did not converge within maximum iterations")
-        return RASResult(X, self.max_iter, False, row_error, col_error)
+        return RASResult(X, self.max_iter, False, row_error, col_error, r, s)
 
 
 class GRASBalancer(MatrixBalancerBase):
@@ -329,7 +329,7 @@ class GRASBalancer(MatrixBalancerBase):
         balanced_matrix = sp.diags(r.flatten()) @ P @ sp.diags(s.flatten()) - self.invd_sparse(
             r
         ) @ N @ self.invd_sparse(s)
-        return RASResult(balanced_matrix, iteration + 1, True, dif, dif)
+        return RASResult(balanced_matrix, iteration + 1, True, dif, dif, r, s)
 
 
 def balance_matrix(

@@ -59,6 +59,8 @@ class RASResult:
     converged: bool
     row_error: float
     col_error: float
+    row_multiplier: NDArray
+    col_multiplier: NDArray
 
     def __str__(self) -> str:
         return (

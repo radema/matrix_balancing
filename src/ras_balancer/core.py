@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class MatrixBalancerBase:
     """Base class for matrix balancing algorithms."""
+
     def __init__(
         self,
         max_iter: int = 1000,
@@ -51,7 +52,7 @@ class MatrixBalancerBase:
             return sparsity < 0.1
 
         return False
-    
+
     @staticmethod
     def check_balance(
         matrix: Union[NDArray, sp.spmatrix],
@@ -96,16 +97,17 @@ class MatrixBalancerBase:
             col_deviations=col_deviations,
             is_balanced=row_balanced and col_balanced,
         )
-    
+
     def process_dense_chunk(
-            self, matrix: NDArray, r: NDArray, s: NDArray, start: int, end: int
-            ) -> NDArray:
+        self, matrix: NDArray, r: NDArray, s: NDArray, start: int, end: int
+    ) -> NDArray:
         """Process a chunk of a dense matrix for memory efficiency."""
         chunk = matrix[start:end, :]
         chunk = np.multiply(chunk, r[start:end, np.newaxis])
         chunk = np.multiply(chunk, s)
         return chunk
-    
+
+
 class RASBalancer(MatrixBalancerBase):
     """A class for balancing matrices using the RAS algorithm."""
 
@@ -193,21 +195,68 @@ class RASBalancer(MatrixBalancerBase):
 
         warnings.warn("RAS algorithm did not converge within maximum iterations")
         return RASResult(X, self.max_iter, False, row_error, col_error)
-    
+
 
 class GRASBalancer(MatrixBalancerBase):
-    """Balances matrices using the GRAS algorithm for matrices with both positive and negative values."""
+    """
+    Balances matrices using the GRAS algorithm
+    for matrices with both positive and negative values.
+    """
 
     @staticmethod
     def invd_sparse(x):
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             invd_values = np.where(x != 0, 1.0 / x, 1.0)
         return sp.diags(invd_values.flatten())
 
-    def balance(self, matrix, target_row_sums, target_col_sums):
+    def balance(
+        self,
+        matrix,
+        target_row_sums,
+        target_col_sums,
+        bias_matrix: Optional[Union[NDArray, sp.spmatrix]] = None,
+        bias_method: str = "multiplicative",
+    ):
+        """
+        Balance a matrix using the GRAS algorithm with optional bias matrix.
+
+        Parameters
+        ----------
+        matrix : Union[NDArray, sp.spmatrix]
+            Input matrix to balance
+        target_row_sums : NDArray
+            Target row sums
+        target_col_sums : NDArray
+            Target column sums
+        bias_matrix : Optional[Union[NDArray, sp.spmatrix]], optional
+            Bias matrix to modify the input matrix before balancing, by default None
+        bias_method : str, optional
+            Method of applying bias matrix ('multiplicative' or 'additive'),
+            by default 'multiplicative'
+
+        Returns
+        -------
+        RASResult
+            Results containing balanced matrix and convergence information
+        """
+        # Validate inputs
         self._validate_inputs(matrix, target_row_sums, target_col_sums)
 
-        m,n = matrix.shape
+        # Check bias matrix if provided
+        if bias_matrix is not None:
+            # Validate bias matrix dimensions
+            if bias_matrix.shape != matrix.shape:
+                raise ValueError("Bias matrix must have the same shape as input matrix")
+
+            # Apply bias matrix based on specified method
+            if bias_method.lower() == "multiplicative":
+                matrix = matrix * bias_matrix
+            elif bias_method.lower() == "additive":
+                matrix = matrix + bias_matrix
+            else:
+                raise ValueError("Bias method must be 'multiplicative' or 'additive'")
+
+        m, n = matrix.shape
 
         if sp.issparse(matrix):
             # For sparse matrices, use `.maximum` for efficient operations
@@ -219,15 +268,18 @@ class GRASBalancer(MatrixBalancerBase):
             N = np.maximum(-matrix, 0)  # Extract negative part and negate
 
         r = np.ones((m, 1))
-        dif = float('inf')
+        dif = float("inf")
 
         pr = P.T @ r
         nr = N.T @ self.invd_sparse(r) @ np.ones((m, 1))
 
-        s = self.invd_sparse(2 * pr) @ (target_col_sums.reshape(-1,1) + np.sqrt(target_col_sums.reshape(-1,1)**2 + 4 * pr * nr))
+        s = self.invd_sparse(2 * pr) @ (
+            target_col_sums.reshape(-1, 1)
+            + np.sqrt(target_col_sums.reshape(-1, 1) ** 2 + 4 * pr * nr)
+        )
         # Handle possible NaNs
         s = np.nan_to_num(s, nan=1e-10, posinf=1e-10, neginf=1e-10)
-        ss = -self.invd_sparse(target_col_sums.reshape(-1,1)) @ nr
+        ss = -self.invd_sparse(target_col_sums.reshape(-1, 1)) @ nr
         s[pr.flatten() == 0] = ss[pr.flatten() == 0]
 
         s_old = s
@@ -238,19 +290,25 @@ class GRASBalancer(MatrixBalancerBase):
 
             ps = P @ s
             ns = N @ self.invd_sparse(s) @ np.ones((n, 1))
-            r = self.invd_sparse(2 * ps) @ (target_row_sums.reshape(-1,1) + np.sqrt(target_row_sums.reshape(-1,1)**2 + 4 * ps * ns))
+            r = self.invd_sparse(2 * ps) @ (
+                target_row_sums.reshape(-1, 1)
+                + np.sqrt(target_row_sums.reshape(-1, 1) ** 2 + 4 * ps * ns)
+            )
             # Handle possible NaNs
-            r = np.nan_to_num(r, nan=1e-10, posinf=1e-10, neginf=1e-10)            
-            rr = -self.invd_sparse(target_row_sums.reshape(-1,1)) @ ns
+            r = np.nan_to_num(r, nan=1e-10, posinf=1e-10, neginf=1e-10)
+            rr = -self.invd_sparse(target_row_sums.reshape(-1, 1)) @ ns
             r[ps.flatten() == 0] = rr[ps.flatten() == 0]
 
             pr = P.T @ r
             nr = N.T @ self.invd_sparse(r) @ np.ones((m, 1))
 
-            s = self.invd_sparse(2 * pr) @ (target_col_sums.reshape(-1,1) + np.sqrt(target_col_sums.reshape(-1,1)**2 + 4 * pr * nr))
+            s = self.invd_sparse(2 * pr) @ (
+                target_col_sums.reshape(-1, 1)
+                + np.sqrt(target_col_sums.reshape(-1, 1) ** 2 + 4 * pr * nr)
+            )
             # Handle possible NaNs
             s = np.nan_to_num(s, nan=1e-10, posinf=1e-10, neginf=1e-10)
-            ss = -self.invd_sparse(target_col_sums.reshape(-1,1)) @ nr
+            ss = -self.invd_sparse(target_col_sums.reshape(-1, 1)) @ nr
             s[pr.flatten() == 0] = ss[pr.flatten() == 0]
 
             s_dif = np.max(np.abs(s - s_old))
@@ -258,10 +316,9 @@ class GRASBalancer(MatrixBalancerBase):
 
             dif = max(s_dif, r_dif)
 
-            if (dif < self.tolerance):
+            if dif < self.tolerance:
                 break
 
-            
             s_old = s
             r_old = r
 
@@ -269,14 +326,19 @@ class GRASBalancer(MatrixBalancerBase):
             warnings.warn("GRAS algorithm did not converge within the maximum number of iterations")
             return RASResult(matrix, self.max_iter, False, dif, dif)
 
-        balanced_matrix = sp.diags(r.flatten()) @ P @ sp.diags(s.flatten()) - self.invd_sparse(r) @ N @ self.invd_sparse(s)
+        balanced_matrix = sp.diags(r.flatten()) @ P @ sp.diags(s.flatten()) - self.invd_sparse(
+            r
+        ) @ N @ self.invd_sparse(s)
         return RASResult(balanced_matrix, iteration + 1, True, dif, dif)
+
 
 def balance_matrix(
     matrix: Union[np.ndarray, sp.spmatrix],
     target_row_sums: np.ndarray,
     target_col_sums: np.ndarray,
     method: str = "RAS",
+    bias_matrix: Optional[Union[np.ndarray, sp.spmatrix]] = None,
+    bias_method: str = "multiplicative",
     **kwargs,
 ) -> RASResult:
     """
@@ -292,6 +354,11 @@ def balance_matrix(
         Target column sums.
     method : str, optional
         The balancing method to use ('RAS' or 'GRAS'), by default 'RAS'.
+    bias_matrix : Optional[Union[np.ndarray, sp.spmatrix]], optional
+        Bias matrix to modify the input matrix before balancing, by default None
+    bias_method : str, optional
+        Method of applying bias matrix ('multiplicative' or 'additive'),
+        by default 'multiplicative'
     **kwargs
         Additional parameters passed to the balancer class (e.g., max_iter, tolerance).
 
@@ -301,10 +368,23 @@ def balance_matrix(
         The result of the balancing process.
     """
     if method.upper() == "RAS":
+        if bias_matrix is not None:
+            warnings.warn("Bias matrix is only supported for GRAS method and will be ignored")
         balancer = RASBalancer(**kwargs)
     elif method.upper() == "GRAS":
         balancer = GRASBalancer(**kwargs)
     else:
-        raise ValueError(f"Unknown balancing method: {method}. Supported methods are 'RAS' and 'GRAS'.")
+        raise ValueError(
+            f"Unknown balancing method: {method}. Supported methods are 'RAS' and 'GRAS'."
+        )
 
-    return balancer.balance(matrix, target_row_sums, target_col_sums)
+    if method.upper() == "GRAS":
+        return balancer.balance(
+            matrix,
+            target_row_sums,
+            target_col_sums,
+            bias_matrix=bias_matrix,
+            bias_method=bias_method,
+        )
+    else:
+        return balancer.balance(matrix, target_row_sums, target_col_sums)

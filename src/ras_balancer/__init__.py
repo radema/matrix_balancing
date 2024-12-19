@@ -19,7 +19,8 @@ from . import shocker
 from . import types
 
 # Explicitly import relevant classes and functions for top-level access
-from .core import RASBalancer, GRASBalancer, balance_matrix  # noqa: F401
+from .core import RASBalancer, GRASBalancer, MRGRASBalancer, balance_matrix  # noqa: F401
 from .generator import MatrixGenerator  # noqa: F401
 from .shocker import MatrixShocker, ShockType  # noqa: F401
-from .types import BalanceStatus, RASResult, ShockResult, BalanceCheckResult, MatrixGenerationResult  # noqa: F401
+from .types import BalanceStatus, RASResult, ShockResult  # noqa: F401
+from .types import BalanceCheckResult, MatrixGenerationResult  # noqa: F401

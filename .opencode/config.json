@@ -1,0 +1,112 @@
+{
+  "context": {
+    "files": [
+      "AGENTS.md"
+    ],
+    "patterns": [
+      "This project follows PEP 8 conventions",
+      "Use numpy.typing.NDArray for array types",
+      "All public functions must have type hints",
+      "Prefer opencode built-in tools (read, grep, glob) before external tools",
+      "Python primary expertise with limited frontend knowledge (React/NodeJS/HTML)"
+    ],
+    "expertise": {
+      "primary": "Python with numpy/scipy",
+      "secondary": "JavaScript/React/NodeJS/HTML (limited)",
+      "note": "Ask clarifying questions for non-Python code"
+    }
+  },
+
+  "agent": {
+    "preferences": {
+      "mode": "all",
+      "subagent_type": "general",
+      "tool_policy": "built-in-first",
+      "behavior": "interactive"
+    },
+    "defaults": {
+      "report_filename": "code-review-report.md",
+      "scoring_weights": {
+        "performance": 0.3,
+        "maintainability": 0.25,
+        "quality": 0.25,
+        "architecture": 0.2
+      }
+    }
+  },
+
+  "tools": {
+    "bash": {
+      "mode": "read-only",
+      "allowed_commands": [
+        "ls",
+        "wc",
+        "head",
+        "tail",
+        "test -f"
+      ],
+      "disallowed_commands": [
+        "sed",
+        "awk",
+        "grep",
+        "find"
+      ],
+      "reason": "Use read() and grep() tools instead"
+    },
+    "write": {
+      "mode": "reports-only",
+      "allowed_patterns": [
+        "*.md",
+        "*.txt",
+        "code-review-*.md"
+      ],
+      "disallowed_patterns": [
+        "src/**/*.py",
+        "tests/**/*.py",
+        "*.json",
+        "pyproject.toml",
+        "setup.py",
+        "__init__.py"
+      ],
+      "reason": "Skills are read-only analysis, never modifies source code"
+    }
+  },
+
+  "session": {
+    "defaults": {
+      "ask_before_write": true,
+      "confirm_overwrite": true,
+      "show_progress": true,
+      "periodic_check_ins": true
+    },
+    "interaction": {
+      "clarifying_questions": "enabled",
+      "periodic_updates": "every_3_files",
+      "offer_continue": true
+    }
+  },
+
+  "skills": {
+    "auto_load": [],
+    "priority": [
+      "code-reviewer"
+    ],
+    "context": {
+      "code-reviewer": {
+        "type": "analysis",
+        "read_only": true,
+        "generates_report": true,
+        "scoring": true
+      }
+    }
+  },
+
+  "explanations": {
+    "context_files": "AGENTS.md contains project coding conventions and is auto-loaded for context",
+    "agent_preferences": "mode: 'all' enables skills in all contexts, interactive mode ensures clarifying questions",
+    "tool_policy": "built-in-first prioritizes read/grep/glob, suggests external tools only after analysis",
+    "write_restrictions": "read-only skills can only write report files, never modify source code",
+    "scoring_system": "Weighted average (30%/25%/25%/20%) for performance/maintainability/quality/architecture",
+    "session_defaults": "ask_before_write prevents mistakes, confirm_overwrite avoids report conflicts, periodic_check_ins matches user preference"
+  }
+}

@@ -6,7 +6,7 @@ from numpy.typing import NDArray
 import scipy.sparse as sp
 import logging
 import warnings
-from typing import Union, Optional
+from typing import Union, Optional, List, Set, Tuple
 from .types import BalanceStatus, BalanceCheckResult, RASResult
 
 # Configure logging
@@ -33,8 +33,8 @@ class MatrixBalancerBase:
     def _validate_inputs(self, matrix, target_row_sums, target_col_sums):
         if matrix.shape[0] != len(target_row_sums) or matrix.shape[1] != len(target_col_sums):
             raise ValueError("Target sum dimensions must match matrix dimensions")
-        if np.any(target_row_sums < 0) or np.any(target_col_sums < 0):
-            raise ValueError("Target sums must be non-negative")
+        # if np.any(target_row_sums < 0) or np.any(target_col_sums < 0):
+        #    raise ValueError("Target sums must be non-negative")
         if not np.allclose(target_row_sums.sum(), target_col_sums.sum(), rtol=1e-5):
             raise ValueError("Sum of target row sums must equal sum of target column sums")
 
@@ -117,6 +117,7 @@ class RASBalancer(MatrixBalancerBase):
         target_row_sums: NDArray,
         target_col_sums: NDArray,
         initial_correction: bool = True,
+        **kwargs,
     ) -> RASResult:
         """
         Balance a matrix using the RAS algorithm.
@@ -216,6 +217,7 @@ class GRASBalancer(MatrixBalancerBase):
         target_col_sums,
         bias_matrix: Optional[Union[NDArray, sp.spmatrix]] = None,
         bias_method: str = "multiplicative",
+        **kwargs,
     ):
         """
         Balance a matrix using the GRAS algorithm with optional bias matrix.
@@ -332,6 +334,215 @@ class GRASBalancer(MatrixBalancerBase):
         return RASResult(balanced_matrix, iteration + 1, True, dif, dif, r, s)
 
 
+class MRGRASBalancer(MatrixBalancerBase):
+    """Balances matrices using the MRGRAS algorithm for multi-region constraints."""
+
+    @staticmethod
+    def invd_sparse(x):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            invd_values = np.where(x != 0, 1.0 / x, 1.0)
+        return sp.diags(invd_values.flatten())
+
+    def construct_constraint_matrices(
+        self,
+        constraints: List[Set[Tuple[int, int]]],
+        values: List[float],
+        m: int,  # Number of input rows
+        n: int,  # Number of input columns
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Construct Q, G, and W matrices for multiregion constraints.
+        """
+
+        def find_groups(components):
+            groups = []
+            for comp_set in components:
+                matching_groups = [group for group in groups if not group.isdisjoint(comp_set)]
+                if matching_groups:
+                    merged_group = set.union(*matching_groups, comp_set)
+                    groups = [group for group in groups if group not in matching_groups]
+                    groups.append(merged_group)
+                else:
+                    groups.append(comp_set)
+            return groups
+
+        first_components = [
+            (set(idx[0] for idx in constraint_set)) for constraint_set in constraints
+        ]
+        second_components = [
+            (set(idx[1] for idx in constraint_set)) for constraint_set in constraints
+        ]
+        row_groups = find_groups(first_components)
+        col_groups = find_groups(second_components)
+
+        covered_rows = {i for group in row_groups for i in group}
+        covered_cols = {j for group in col_groups for j in group}
+
+        if len(covered_rows) < m:
+            uncovered_rows = set(range(m)) - covered_rows
+            row_groups.append(uncovered_rows)
+
+        if len(covered_cols) < n:
+            uncovered_cols = set(range(n)) - covered_cols
+            col_groups.append(uncovered_cols)
+
+        M = len(row_groups)
+        N = len(col_groups)
+
+        G = np.zeros((M, m), dtype=float)
+        Q = np.zeros((n, N), dtype=float)
+        W = np.full((M, N), np.nan, dtype=float)
+
+        row_group_map = {}
+        for group_idx, group in enumerate(row_groups):
+            for row in group:
+                row_group_map[row] = group_idx
+
+        col_group_map = {}
+        for group_idx, group in enumerate(col_groups):
+            for col in group:
+                col_group_map[col] = group_idx
+
+        for row, group_idx in row_group_map.items():
+            G[group_idx, row] = 1.0
+
+        for col, group_idx in col_group_map.items():
+            Q[col, group_idx] = 1.0
+
+        for constraint_set, value in zip(constraints, values):
+            for i, j in constraint_set:
+                row_idx = row_group_map[i]
+                col_idx = col_group_map[j]
+                W[row_idx, col_idx] = value
+
+        return G, Q, W
+
+    def MRGRAS_UpdateMatrix(self, P, N, T, r, s):
+        """
+        Updates the matrix using the MRGRAS balancing approach with sparse matrices.
+        """
+        with np.errstate(divide="ignore", invalid="ignore"):
+            invd_T = np.where(T != 0, 1.0 / T, 1.0)
+        return sp.diags(r.flatten()) @ (P * T) @ sp.diags(s.flatten()) - sp.diags(
+            1.0 / r.flatten()
+        ) @ (N * invd_T) @ sp.diags(1.0 / s.flatten())
+
+    def balance(
+        self,
+        matrix: Union[np.ndarray, sp.spmatrix],
+        target_row_sums: np.ndarray,
+        target_col_sums: np.ndarray,
+        constraints: List[Set[Tuple[int, int]]] = None,
+        values: List[float] = None,
+        epsilon_constr: float = 1e-10,
+        **kwargs,
+    ) -> RASResult:
+        """
+        Balance a matrix using the MRGRAS algorithm.
+        """
+        self._validate_inputs(matrix, target_row_sums, target_col_sums)
+        use_sparse = self._should_use_sparse(matrix)
+
+        if use_sparse and not sp.issparse(matrix):
+            matrix = sp.csr_matrix(matrix)
+        elif not use_sparse and sp.issparse(matrix):
+            matrix = matrix.toarray()
+
+        u = target_row_sums.reshape(-1, 1)
+        v = target_col_sums.reshape(-1, 1)
+
+        if constraints and values:
+            G, Q, W = self.construct_constraint_matrices(constraints, values, *matrix.shape)
+        else:
+            G = np.eye(matrix.shape[0])
+            Q = np.eye(matrix.shape[1])
+            W = np.ones(matrix.shape)
+
+        if sp.issparse(matrix):
+            P = matrix.maximum(0)
+            N = matrix.minimum(0).multiply(-1)
+        else:
+            P = np.maximum(matrix, 0)
+            N = np.maximum(-matrix, 0)
+
+        r = np.ones((matrix.shape[0], 1))
+        t = np.ones(W.shape)
+        s = np.ones((matrix.shape[1], 1))
+
+        max_iter = kwargs.get("max_iter", self.max_iter)
+        epsilon = kwargs.get("tolerance", self.tolerance)
+
+        for iteration in range(max_iter):
+
+            T = G.T @ t @ Q.T
+
+            pr = (T * P).T @ r
+            nr = (
+                (np.where(T != 0, 1.0 / T, 1.0) * N).T
+                @ self.invd_sparse(r)
+                @ np.ones((matrix.shape[0], 1))
+            )
+
+            s_new = self.invd_sparse(2 * pr) @ (v + np.sqrt(v**2 + 4 * pr * nr))
+
+            ss = -self.invd_sparse(v) @ nr
+
+            s_new = np.nan_to_num(s_new, nan=1e-10)
+
+            s_new[pr.flatten() == 0] = ss[pr.flatten() == 0]
+
+            ps = (P * T) @ s_new
+            ns = (
+                (np.where(T != 0, 1.0 / T, 1.0) * N)
+                @ self.invd_sparse(s_new)
+                @ np.ones((matrix.shape[1], 1))
+            )
+
+            r_new = self.invd_sparse(2 * ps) @ (u + np.sqrt(u**2 + 4 * ps * ns))
+
+            rr = -self.invd_sparse(u) @ ns
+
+            r_new = np.nan_to_num(r_new, nan=1e-10)
+
+            r_new[ps.flatten() == 0] = rr[ps.flatten() == 0]
+
+            # update t
+            pt = G @ np.diag(r_new.flatten()) @ P @ np.diag(s_new.flatten()) @ Q
+            nt = G @ self.invd_sparse(r_new) @ N @ self.invd_sparse(s_new) @ Q
+
+            with np.errstate(divide="ignore", invalid="ignore"):
+                t_new = (np.where(pt != 0, 1.0 / pt, 1.0) / 2.0) * (W + np.sqrt(W**2 + 4 * pt * nt))
+                W_invd = np.where(W != 0, 1.0 / W, 1.0)
+                tr = -nt * W_invd
+
+            t_new[pt == 0] = tr[pt == 0]
+            # Handle possible NaNs
+            t_new = np.nan_to_num(t_new, nan=1, posinf=1e-10, neginf=1e-10)
+
+            diff = max(np.max(np.abs(r_new - r)), np.max(np.abs(s_new - s)))
+
+            r, s, t = r_new, s_new, t_new
+
+            if diff < epsilon:
+                break
+
+        T_final = G.T @ t @ Q.T
+        balanced_matrix = self.MRGRAS_UpdateMatrix(P, N, T_final, r, s)
+
+        print(balanced_matrix)
+        print(iteration)
+
+        return RASResult(
+            balanced_matrix,
+            iteration + 1,
+            diff < epsilon,
+            np.max(np.abs(u - balanced_matrix.sum(axis=1))),
+            np.max(np.abs(v - balanced_matrix.sum(axis=0))),
+            r,
+            s,
+        )
+
+
 def balance_matrix(
     matrix: Union[np.ndarray, sp.spmatrix],
     target_row_sums: np.ndarray,
@@ -339,10 +550,12 @@ def balance_matrix(
     method: str = "RAS",
     bias_matrix: Optional[Union[np.ndarray, sp.spmatrix]] = None,
     bias_method: str = "multiplicative",
+    constraints: Optional[List[Set[Tuple[int, int]]]] = None,
+    values: Optional[List[float]] = None,
     **kwargs,
 ) -> RASResult:
     """
-    Balances a matrix using the specified method (RAS or GRAS).
+    Balances a matrix using the specified method (RAS, GRAS, or MRGRAS).
 
     Parameters
     ----------
@@ -353,12 +566,16 @@ def balance_matrix(
     target_col_sums : np.ndarray
         Target column sums.
     method : str, optional
-        The balancing method to use ('RAS' or 'GRAS'), by default 'RAS'.
+        The balancing method to use ('RAS', 'GRAS', or 'MRGRAS'), by default 'RAS'.
     bias_matrix : Optional[Union[np.ndarray, sp.spmatrix]], optional
         Bias matrix to modify the input matrix before balancing, by default None
     bias_method : str, optional
         Method of applying bias matrix ('multiplicative' or 'additive'),
         by default 'multiplicative'
+    constraints : Optional[List[Set[Tuple[int, int]]]], optional
+        Constraints for MRGRAS balancing, by default None
+    values : Optional[List[float]], optional
+        Values for constraints in MRGRAS, by default None
     **kwargs
         Additional parameters passed to the balancer class (e.g., max_iter, tolerance).
 
@@ -370,21 +587,28 @@ def balance_matrix(
     if method.upper() == "RAS":
         if bias_matrix is not None:
             warnings.warn("Bias matrix is only supported for GRAS method and will be ignored")
+        if constraints is not None or values is not None:
+            warnings.warn("Constraints are only supported for MRGRAS method and will be ignored")
         balancer = RASBalancer(**kwargs)
     elif method.upper() == "GRAS":
+        if constraints is not None or values is not None:
+            warnings.warn("Constraints are only supported for MRGRAS method and will be ignored")
         balancer = GRASBalancer(**kwargs)
+    elif method.upper() == "MRGRAS":
+        balancer = MRGRASBalancer(**kwargs)
     else:
         raise ValueError(
-            f"Unknown balancing method: {method}. Supported methods are 'RAS' and 'GRAS'."
+            f"Unknown balancing method: {method}. Supported methods are 'RAS' and 'MRGRAS'."
         )
 
-    if method.upper() == "GRAS":
+    if method.upper() == "MRGRAS":
         return balancer.balance(
-            matrix,
-            target_row_sums,
-            target_col_sums,
-            bias_matrix=bias_matrix,
-            bias_method=bias_method,
+            matrix=matrix,
+            target_row_sums=target_row_sums,
+            target_col_sums=target_col_sums,
+            constraints=constraints,
+            values=values,
+            **kwargs,
         )
     else:
-        return balancer.balance(matrix, target_row_sums, target_col_sums)
+        return balancer.balance(matrix, target_row_sums, target_col_sums, **kwargs)

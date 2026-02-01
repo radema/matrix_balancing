@@ -1,7 +1,8 @@
 import numpy as np
-import scipy.sparse as sp
 import pytest
-from ras_balancer import RASBalancer, GRASBalancer, balance_matrix, RASResult
+import scipy.sparse as sp
+
+from ras_balancer import GRASBalancer, RASBalancer, RASResult, balance_matrix
 
 
 class TestMatrixBalancers:

@@ -1,10 +1,12 @@
 # generator.py
 """Utilities for generating random balanced matrices."""
 
+from typing import Tuple
+
 import numpy as np
 import scipy.sparse as sp
-from typing import Tuple
 from numpy.typing import NDArray
+
 from .core import balance_matrix
 
 

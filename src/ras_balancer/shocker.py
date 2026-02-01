@@ -1,13 +1,15 @@
 # shocker.py
 """Functionality for introducing controlled shocks to balanced matrices."""
 
+import warnings
+from typing import List, Optional, Tuple, Union
+
 import numpy as np
 import scipy.sparse as sp
-import warnings
-from typing import Union, Optional, List, Tuple
 from numpy.typing import NDArray
-from .types import ShockType, ShockResult
+
 from .core import balance_matrix
+from .types import ShockResult, ShockType
 
 
 class MatrixShocker:

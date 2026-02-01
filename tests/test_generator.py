@@ -1,6 +1,7 @@
 import numpy as np
-import scipy.sparse as sp
 import pytest
+import scipy.sparse as sp
+
 from ras_balancer import MatrixGenerator
 
 

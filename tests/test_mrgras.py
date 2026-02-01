@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from ras_balancer import MRGRASBalancer, balance_matrix
 
 
@@ -121,9 +122,9 @@ class TestMRGRASBalancer:
         # Check constraint values
         for i, constraint_set in enumerate(constraints):
             constraint_sum = sum(result.balanced_matrix[row, col] for row, col in constraint_set)
-            assert np.isclose(
-                constraint_sum, values[i], atol=1e-10
-            ), f"Constraint {i} sum mismatch. Expected {values[i]}, got {constraint_sum}."
+            assert np.isclose(constraint_sum, values[i], atol=1e-10), (
+                f"Constraint {i} sum mismatch. Expected {values[i]}, got {constraint_sum}."
+            )
 
     def test_diagonal_matrix(self):
         """Test diagonal matrix with constraints."""
@@ -149,9 +150,9 @@ class TestMRGRASBalancer:
         # Check constraint values
         for i, constraint_set in enumerate(constraints):
             constraint_sum = sum(result.balanced_matrix[row, col] for row, col in constraint_set)
-            assert np.isclose(
-                constraint_sum, values[i], atol=1e-10
-            ), f"Constraint {i} sum mismatch. Expected {values[i]}, got {constraint_sum}."
+            assert np.isclose(constraint_sum, values[i], atol=1e-10), (
+                f"Constraint {i} sum mismatch. Expected {values[i]}, got {constraint_sum}."
+            )
 
     def test_all_positive_matrix(self):
         """Test all positive matrix with constraints."""
@@ -177,9 +178,9 @@ class TestMRGRASBalancer:
         # Check constraint values
         for i, constraint_set in enumerate(constraints):
             constraint_sum = sum(result.balanced_matrix[row, col] for row, col in constraint_set)
-            assert np.isclose(
-                constraint_sum, values[i], atol=1e-10
-            ), f"Constraint {i} sum mismatch. Expected {values[i]}, got {constraint_sum}."
+            assert np.isclose(constraint_sum, values[i], atol=1e-10), (
+                f"Constraint {i} sum mismatch. Expected {values[i]}, got {constraint_sum}."
+            )
 
     def test_large_random_matrix(self):
         """Test a large random matrix with constraints."""
@@ -206,6 +207,6 @@ class TestMRGRASBalancer:
         # Check constraint values
         for i, constraint_set in enumerate(constraints):
             constraint_sum = sum(result.balanced_matrix[row, col] for row, col in constraint_set)
-            assert np.isclose(
-                constraint_sum, values[i], atol=1e-10
-            ), f"Constraint {i} sum mismatch. Expected {values[i]}, got {constraint_sum}."
+            assert np.isclose(constraint_sum, values[i], atol=1e-10), (
+                f"Constraint {i} sum mismatch. Expected {values[i]}, got {constraint_sum}."
+            )

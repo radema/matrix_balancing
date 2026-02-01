@@ -1,14 +1,14 @@
-import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
+import streamlit as st
 
 
 # Placeholder to fetch a matrix based on user inputs
 def fetch_matrix(region_code, matrix_name, sector_name):
     return pd.DataFrame(
         np.random.rand(5, 5),
-        columns=[f"Col_{i+1}" for i in range(5)],
-        index=[f"Row_{i+1}" for i in range(5)],
+        columns=[f"Col_{i + 1}" for i in range(5)],
+        index=[f"Row_{i + 1}" for i in range(5)],
     )
 
 

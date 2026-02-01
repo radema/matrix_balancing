@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 class MatrixBalancerBase:
     """Base class for matrix balancing algorithms."""
 
+    EPSILON: float = 1e-10
+
     def __init__(
         self,
         max_iter: int = 1000,
@@ -26,7 +28,7 @@ class MatrixBalancerBase:
         use_sparse: Optional[bool] = None,
         chunk_size: int = 1000,
     ):
-        """Initialize the RAS Balancer."""
+        """Initialize the matrix balancer."""
         self.max_iter = max_iter
         self.tolerance = tolerance
         self.use_sparse = use_sparse
@@ -70,10 +72,10 @@ class MatrixBalancerBase:
         target_col_sums = current_col_sums if target_col_sums is None else target_col_sums
 
         row_deviations = np.abs(current_row_sums - target_row_sums) / np.maximum(
-            target_row_sums, 1e-10
+            target_row_sums, MatrixBalancerBase.EPSILON
         )
         col_deviations = np.abs(current_col_sums - target_col_sums) / np.maximum(
-            target_col_sums, 1e-10
+            target_col_sums, MatrixBalancerBase.EPSILON
         )
 
         max_row_dev = np.max(row_deviations)
@@ -103,7 +105,27 @@ class MatrixBalancerBase:
     def process_dense_chunk(
         self, matrix: NDArray, r: NDArray, s: NDArray, start: int, end: int
     ) -> NDArray:
-        """Process a chunk of a dense matrix for memory efficiency."""
+        """
+        Process a chunk of a dense matrix for memory efficiency.
+
+        Parameters
+        ----------
+        matrix : NDArray
+            The full dense matrix.
+        r : NDArray
+            Row scaling factors.
+        s : NDArray
+            Column scaling factors.
+        start : int
+            Start index of the chunk.
+        end : int
+            End index of the chunk.
+
+        Returns
+        -------
+        NDArray
+            The processed chunk of the matrix.
+        """
         chunk = matrix[start:end, :]
         chunk = np.multiply(chunk, r[start:end, np.newaxis])
         chunk = np.multiply(chunk, s)
@@ -207,20 +229,154 @@ class GRASBalancer(MatrixBalancerBase):
     """
 
     @staticmethod
-    def invd_sparse(x):
+    def invd_sparse(x: NDArray) -> sp.diags:
+        """
+        Compute the inverse of a sparse diagonal matrix.
+
+        Parameters
+        ----------
+        x : NDArray
+            The input array (diagonal elements).
+
+        Returns
+        -------
+        sp.diags
+            The sparse diagonal matrix with inverted values.
+        """
         with np.errstate(divide="ignore", invalid="ignore"):
             invd_values = np.where(x != 0, 1.0 / x, 1.0)
         return sp.diags(invd_values.flatten())
 
+    def _prepare_gras_matrices(
+        self,
+        matrix: Union[NDArray, sp.spmatrix],
+        bias_matrix: Optional[Union[NDArray, sp.spmatrix]] = None,
+        bias_method: str = "multiplicative",
+    ) -> Tuple[Union[NDArray, sp.spmatrix], Union[NDArray, sp.spmatrix]]:
+        """Prepare positive and negative parts of the matrix for GRAS algorithm."""
+        # Check bias matrix if provided
+        if bias_matrix is not None:
+            # Validate bias matrix dimensions
+            if bias_matrix.shape != matrix.shape:
+                raise ValueError("Bias matrix must have the same shape as input matrix")
+
+            # Apply bias matrix based on specified method
+            if bias_method.lower() == "multiplicative":
+                matrix = matrix * bias_matrix
+            elif bias_method.lower() == "additive":
+                matrix = matrix + bias_matrix
+            else:
+                raise ValueError("Bias method must be 'multiplicative' or 'additive'")
+
+        if sp.issparse(matrix):
+            # For sparse matrices, use `.maximum` for efficient operations
+            P = matrix.maximum(0)  # Extract positive part
+            N = matrix.minimum(0).multiply(-1)  # Extract negative part and negate
+        else:
+            # For dense numpy arrays, use `np.maximum` directly
+            P = np.maximum(matrix, 0)  # Extract positive part
+            N = np.maximum(-matrix, 0)  # Extract negative part and negate
+
+        return P, N
+
+    def _gras_iteration(
+        self,
+        P: Union[NDArray, sp.spmatrix],
+        N: Union[NDArray, sp.spmatrix],
+        target_row_sums: NDArray,
+        target_col_sums: NDArray,
+    ) -> Tuple[NDArray, NDArray, float, int]:
+        """Run the main GRAS algorithm iteration loop."""
+        m, n = P.shape
+        r = np.ones((m, 1))
+
+        # Initial calculation for s
+        pr = P.T @ r
+        nr = N.T @ self.invd_sparse(r) @ np.ones((m, 1))
+
+        s = self.invd_sparse(2 * pr) @ (
+            target_col_sums.reshape(-1, 1)
+            + np.sqrt(target_col_sums.reshape(-1, 1) ** 2 + 4 * pr * nr)
+        )
+        # Handle possible NaNs
+        s = np.nan_to_num(s, nan=self.EPSILON, posinf=self.EPSILON, neginf=self.EPSILON)
+        ss = -self.invd_sparse(target_col_sums.reshape(-1, 1)) @ nr
+        s[pr.flatten() == 0] = ss[pr.flatten() == 0]
+
+        s_old = s
+        r_old = r
+        dif = float("inf")
+        iteration = 0
+
+        for iteration in range(self.max_iter):
+            # Update row and column scaling factors
+
+            ps = P @ s
+            ns = N @ self.invd_sparse(s) @ np.ones((n, 1))
+            r = self.invd_sparse(2 * ps) @ (
+                target_row_sums.reshape(-1, 1)
+                + np.sqrt(target_row_sums.reshape(-1, 1) ** 2 + 4 * ps * ns)
+            )
+            # Handle possible NaNs
+            r = np.nan_to_num(r, nan=self.EPSILON, posinf=self.EPSILON, neginf=self.EPSILON)
+            rr = -self.invd_sparse(target_row_sums.reshape(-1, 1)) @ ns
+            r[ps.flatten() == 0] = rr[ps.flatten() == 0]
+
+            pr = P.T @ r
+            nr = N.T @ self.invd_sparse(r) @ np.ones((m, 1))
+
+            s = self.invd_sparse(2 * pr) @ (
+                target_col_sums.reshape(-1, 1)
+                + np.sqrt(target_col_sums.reshape(-1, 1) ** 2 + 4 * pr * nr)
+            )
+            # Handle possible NaNs
+            s = np.nan_to_num(s, nan=self.EPSILON, posinf=self.EPSILON, neginf=self.EPSILON)
+            ss = -self.invd_sparse(target_col_sums.reshape(-1, 1)) @ nr
+            s[pr.flatten() == 0] = ss[pr.flatten() == 0]
+
+            s_dif = np.max(np.abs(s - s_old))
+            r_dif = np.max(np.abs(r - r_old))
+
+            dif = max(s_dif, r_dif)
+
+            if dif < self.tolerance:
+                break
+
+            s_old = s
+            r_old = r
+
+        return r, s, dif, iteration + 1
+
+    def _build_gras_result(
+        self,
+        P: Union[NDArray, sp.spmatrix],
+        N: Union[NDArray, sp.spmatrix],
+        r: NDArray,
+        s: NDArray,
+        dif: float,
+        iteration: int,
+        converged: bool,
+    ) -> RASResult:
+        """Construct the result object from GRAS algorithm outputs."""
+        if not converged:
+            warnings.warn("GRAS algorithm did not converge within the maximum number of iterations")
+            balanced_matrix = P - N
+            return RASResult(balanced_matrix, self.max_iter, False, dif, dif, r, s)
+
+        balanced_matrix = sp.diags(r.flatten()) @ P @ sp.diags(s.flatten()) - self.invd_sparse(
+            r
+        ) @ N @ self.invd_sparse(s)
+        return RASResult(balanced_matrix, iteration, True, dif, dif, r, s)
+
     def balance(
         self,
-        matrix,
-        target_row_sums,
-        target_col_sums,
+        matrix: Union[NDArray, sp.spmatrix],
+        target_row_sums: NDArray,
+        target_col_sums: NDArray,
         bias_matrix: Optional[Union[NDArray, sp.spmatrix]] = None,
         bias_method: str = "multiplicative",
         **kwargs,
-    ):
+    ) -> RASResult:
         """
         Balance a matrix using the GRAS algorithm with optional bias matrix.
 
@@ -246,94 +402,13 @@ class GRASBalancer(MatrixBalancerBase):
         # Validate inputs
         self._validate_inputs(matrix, target_row_sums, target_col_sums)
 
-        # Check bias matrix if provided
-        if bias_matrix is not None:
-            # Validate bias matrix dimensions
-            if bias_matrix.shape != matrix.shape:
-                raise ValueError("Bias matrix must have the same shape as input matrix")
+        P, N = self._prepare_gras_matrices(matrix, bias_matrix, bias_method)
 
-            # Apply bias matrix based on specified method
-            if bias_method.lower() == "multiplicative":
-                matrix = matrix * bias_matrix
-            elif bias_method.lower() == "additive":
-                matrix = matrix + bias_matrix
-            else:
-                raise ValueError("Bias method must be 'multiplicative' or 'additive'")
+        r, s, dif, iteration = self._gras_iteration(P, N, target_row_sums, target_col_sums)
 
-        m, n = matrix.shape
+        converged = dif < self.tolerance
 
-        if sp.issparse(matrix):
-            # For sparse matrices, use `.maximum` for efficient operations
-            P = matrix.maximum(0)  # Extract positive part
-            N = matrix.minimum(0).multiply(-1)  # Extract negative part and negate
-        else:
-            # For dense numpy arrays, use `np.maximum` directly
-            P = np.maximum(matrix, 0)  # Extract positive part
-            N = np.maximum(-matrix, 0)  # Extract negative part and negate
-
-        r = np.ones((m, 1))
-        dif = float("inf")
-
-        pr = P.T @ r
-        nr = N.T @ self.invd_sparse(r) @ np.ones((m, 1))
-
-        s = self.invd_sparse(2 * pr) @ (
-            target_col_sums.reshape(-1, 1)
-            + np.sqrt(target_col_sums.reshape(-1, 1) ** 2 + 4 * pr * nr)
-        )
-        # Handle possible NaNs
-        s = np.nan_to_num(s, nan=1e-10, posinf=1e-10, neginf=1e-10)
-        ss = -self.invd_sparse(target_col_sums.reshape(-1, 1)) @ nr
-        s[pr.flatten() == 0] = ss[pr.flatten() == 0]
-
-        s_old = s
-        r_old = r
-
-        for iteration in range(self.max_iter):
-            # Update row and column scaling factors
-
-            ps = P @ s
-            ns = N @ self.invd_sparse(s) @ np.ones((n, 1))
-            r = self.invd_sparse(2 * ps) @ (
-                target_row_sums.reshape(-1, 1)
-                + np.sqrt(target_row_sums.reshape(-1, 1) ** 2 + 4 * ps * ns)
-            )
-            # Handle possible NaNs
-            r = np.nan_to_num(r, nan=1e-10, posinf=1e-10, neginf=1e-10)
-            rr = -self.invd_sparse(target_row_sums.reshape(-1, 1)) @ ns
-            r[ps.flatten() == 0] = rr[ps.flatten() == 0]
-
-            pr = P.T @ r
-            nr = N.T @ self.invd_sparse(r) @ np.ones((m, 1))
-
-            s = self.invd_sparse(2 * pr) @ (
-                target_col_sums.reshape(-1, 1)
-                + np.sqrt(target_col_sums.reshape(-1, 1) ** 2 + 4 * pr * nr)
-            )
-            # Handle possible NaNs
-            s = np.nan_to_num(s, nan=1e-10, posinf=1e-10, neginf=1e-10)
-            ss = -self.invd_sparse(target_col_sums.reshape(-1, 1)) @ nr
-            s[pr.flatten() == 0] = ss[pr.flatten() == 0]
-
-            s_dif = np.max(np.abs(s - s_old))
-            r_dif = np.max(np.abs(r - r_old))
-
-            dif = max(s_dif, r_dif)
-
-            if dif < self.tolerance:
-                break
-
-            s_old = s
-            r_old = r
-
-        if dif > self.tolerance:
-            warnings.warn("GRAS algorithm did not converge within the maximum number of iterations")
-            return RASResult(matrix, self.max_iter, False, dif, dif, r, s)
-
-        balanced_matrix = sp.diags(r.flatten()) @ P @ sp.diags(s.flatten()) - self.invd_sparse(
-            r
-        ) @ N @ self.invd_sparse(s)
-        return RASResult(balanced_matrix, iteration + 1, True, dif, dif, r, s)
+        return self._build_gras_result(P, N, r, s, dif, iteration, converged)
 
 
 class MRGRASBalancer(MatrixBalancerBase):

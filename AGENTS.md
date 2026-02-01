@@ -7,31 +7,31 @@ This file contains guidelines for agentic coding agents working in the ras-balan
 ### Testing
 ```bash
 # Run all tests
-poetry run pytest tests/
+uv run pytest tests/
 
 # Run with coverage
-poetry run pytest --cov=ras_balancer --cov-report=html
+uv run pytest --cov=ras_balancer --cov-report=html
 
 # Run a single test
-poetry run pytest tests/test_core.py::TestMatrixBalancers::test_ras_balance_dense_matrix -v
+uv run pytest tests/test_core.py::TestMatrixBalancers::test_ras_balance_dense_matrix -v
 
 # Run a single test file
-poetry run pytest tests/test_core.py -v
+uv run pytest tests/test_core.py -v
 ```
 
 ### Formatting
 ```bash
 # Format all code
-poetry run black .
+uv run black .
 
 # Check formatting without making changes
-poetry run black --check .
+uv run black --check .
 ```
 
 ### Linting
 ```bash
 # Run linter
-poetry run flake8 .
+uv run flake8 .
 
 # Linter config: max-line-length=100, excludes logs/, __pycache__, .git, *.pyc
 ```
@@ -39,16 +39,16 @@ poetry run flake8 .
 ### Type Checking
 ```bash
 # Run type checker
-poetry run mypy .
+uv run mypy .
 ```
 
 ### Pre-commit Hooks
 ```bash
 # Install pre-commit hooks
-poetry run pre-commit install
+uv run pre-commit install
 
 # Run pre-commit on all files
-poetry run pre-commit run --all-files
+uv run pre-commit run --all-files
 ```
 
 ## Code Style Guidelines

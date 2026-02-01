@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from ras_balancer import GRASBalancer, balance_matrix
 
 

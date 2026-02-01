@@ -1,12 +1,13 @@
 # types.py
 """Type definitions and dataclasses for the RAS balancing library."""
 
-from typing import Tuple, Union, Optional
-import numpy as np
-from numpy.typing import NDArray
-import scipy.sparse as sp
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional, Tuple, Union
+
+import numpy as np
+import scipy.sparse as sp
+from numpy.typing import NDArray
 
 
 class BalanceStatus(Enum):

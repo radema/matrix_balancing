@@ -1,13 +1,16 @@
 # shocker.py
 """Functionality for introducing controlled shocks to balanced matrices."""
 
+import warnings
+from typing import List, Optional, Tuple, Union
+
 import numpy as np
 import scipy.sparse as sp
-import warnings
-from typing import Union, Optional, List, Tuple
 from numpy.typing import NDArray
-from .types import ShockType, ShockResult
+
 from .core import balance_matrix
+from .types import ShockResult, ShockType
+
 
 class MatrixShocker:
     """Class for introducing controlled shocks to balanced matrices."""
@@ -63,9 +66,7 @@ class MatrixShocker:
         """
         shocked = matrix.copy()
         for idx, magnitude in zip(row_indices, magnitudes):
-            row_values = (
-                shocked[idx].toarray().ravel() if sp.issparse(shocked) else shocked[idx]
-            )
+            row_values = shocked[idx].toarray().ravel() if sp.issparse(shocked) else shocked[idx]
             current_sum = row_values.sum()
 
             if relative:
@@ -85,7 +86,9 @@ class MatrixShocker:
             else:
                 shocked[idx] = row_values
 
-        return self._create_shock_result(matrix, shocked, ShockType.ROW_TOTAL, np.mean(magnitudes), row_indices)
+        return self._create_shock_result(
+            matrix, shocked, ShockType.ROW_TOTAL, np.mean(magnitudes), row_indices
+        )
 
     def shock_column_totals(
         self,
@@ -105,7 +108,9 @@ class MatrixShocker:
             else result.shocked_matrix.T
         )
 
-        return self._create_shock_result(matrix, shocked, ShockType.COLUMN_TOTAL, np.mean(magnitudes), col_indices)
+        return self._create_shock_result(
+            matrix, shocked, ShockType.COLUMN_TOTAL, np.mean(magnitudes), col_indices
+        )
 
     def shock_proportional(
         self,
@@ -146,7 +151,11 @@ class MatrixShocker:
             shocked[row, col] *= 1 + value
 
         return self._create_shock_result(
-            matrix, shocked, ShockType.PROPORTIONAL, magnitude, np.column_stack((shock_rows, shock_cols))
+            matrix,
+            shocked,
+            ShockType.PROPORTIONAL,
+            magnitude,
+            np.column_stack((shock_rows, shock_cols)),
         )
 
     def shock_random(
@@ -186,8 +195,12 @@ class MatrixShocker:
         """
         Apply shocks and rebalance the matrix using the specified method.
         """
-        shocked = self.shock_proportional(matrix, magnitude=0.1, affected_fraction=0.05).shocked_matrix
-        rebalanced = balance_matrix(shocked, row_sums, col_sums, method=method, **kwargs).balanced_matrix
+        shocked = self.shock_proportional(
+            matrix, magnitude=0.1, affected_fraction=0.05
+        ).shocked_matrix
+        rebalanced = balance_matrix(
+            shocked, row_sums, col_sums, method=method, **kwargs
+        ).balanced_matrix
 
         return self._create_shock_result(matrix, rebalanced, ShockType.PROPORTIONAL, 0.1, None)
 

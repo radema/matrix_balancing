@@ -2,53 +2,71 @@
 
 This file contains guidelines for agentic coding agents working in the ras-balancer repository.
 
+## Toolchain Choice: uv and Ruff
+
+We have migrated to a modern Python toolchain using **uv** and **Ruff**.
+
+### Why uv?
+- **Speed**: `uv` is significantly faster than Poetry and pip for package resolution and installation.
+- **Unified Tool**: It handles Python version management, package management, lockfiles, and virtual environments in a single tool.
+- **Standard Compliance**: It uses standard `pyproject.toml` (PEP 621) configuration.
+
+### Why Ruff?
+- **Performance**: Ruff is 10-100x faster than existing linters and formatters.
+- **Consolidation**: It replaces both `black` (formatting) and `flake8` (linting), as well as `isort` (import sorting), reducing dependency bloat.
+- **Compatibility**: It is designed to be a drop-in replacement for these tools with compatible configuration.
+
 ## Build / Lint / Test Commands
+
+### Setup
+```bash
+# Install dependencies
+uv sync
+```
 
 ### Testing
 ```bash
 # Run all tests
-poetry run pytest tests/
+uv run pytest
 
 # Run with coverage
-poetry run pytest --cov=ras_balancer --cov-report=html
+uv run pytest --cov=src --cov-report=html
 
 # Run a single test
-poetry run pytest tests/test_core.py::TestMatrixBalancers::test_ras_balance_dense_matrix -v
+uv run pytest tests/test_core.py::TestMatrixBalancers::test_ras_balance_dense_matrix -v
 
 # Run a single test file
-poetry run pytest tests/test_core.py -v
+uv run pytest tests/test_core.py -v
 ```
 
-### Formatting
+### Formatting & Linting
 ```bash
-# Format all code
-poetry run black .
+# Format code (replaces black)
+uv run ruff format .
 
-# Check formatting without making changes
-poetry run black --check .
-```
+# Check formatting
+uv run ruff format --check .
 
-### Linting
-```bash
-# Run linter
-poetry run flake8 .
+# Run linter (replaces flake8)
+uv run ruff check .
 
-# Linter config: max-line-length=100, excludes logs/, __pycache__, .git, *.pyc
+# Fix linting issues automatically
+uv run ruff check --fix .
 ```
 
 ### Type Checking
 ```bash
 # Run type checker
-poetry run mypy .
+uv run mypy .
 ```
 
 ### Pre-commit Hooks
 ```bash
 # Install pre-commit hooks
-poetry run pre-commit install
+uv run pre-commit install
 
 # Run pre-commit on all files
-poetry run pre-commit run --all-files
+uv run pre-commit run --all-files
 ```
 
 ## Code Style Guidelines
@@ -135,9 +153,9 @@ def balance(
 ```
 
 ### Formatting
-- **Line length**: 100 characters (configured in pyproject.toml [tool.black])
+- **Line length**: 100 characters (configured in pyproject.toml [tool.ruff])
 - **Target version**: Python 3.10
-- **Formatter**: Black (auto-format on commit via pre-commit hooks)
+- **Formatter**: Ruff (auto-format on commit via pre-commit hooks)
 
 ### Error Handling
 - **Validation errors**: Raise `ValueError` with descriptive messages for invalid inputs

@@ -1,10 +1,12 @@
 # generator.py
 """Utilities for generating random balanced matrices."""
 
+from typing import Tuple
+
 import numpy as np
 import scipy.sparse as sp
-from typing import Tuple
 from numpy.typing import NDArray
+
 from .core import balance_matrix
 
 
@@ -97,7 +99,7 @@ class MatrixGenerator:
         """
         if not (0 <= density <= 1):
             raise ValueError("Density must be between 0 and 1 inclusive.")
-        
+
         row_sums = cls._generate_random_positive_vector(rows, total_sum)
         col_sums = cls._generate_random_positive_vector(cols, total_sum)
 

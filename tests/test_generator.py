@@ -7,6 +7,7 @@ class TestMatrixGenerator:
     @pytest.fixture(autouse=True)
     def setup(self):
         """Set up test fixtures."""
+        np.random.seed(42)
         self.rows = 100
         self.cols = 100
         self.total_sum = 1000.0

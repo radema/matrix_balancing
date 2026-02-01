@@ -9,6 +9,13 @@ import scipy.sparse as sp
 from numpy.typing import NDArray
 
 from .core import balance_matrix
+from .operations import (
+    assign_row,
+    count_elements,
+    extract_row,
+    get_nonzero_indices,
+    safe_transpose,
+)
 from .types import ShockResult, ShockType
 
 
@@ -66,7 +73,7 @@ class MatrixShocker:
         """
         shocked = matrix.copy()
         for idx, magnitude in zip(row_indices, magnitudes):
-            row_values = shocked[idx].toarray().ravel() if sp.issparse(shocked) else shocked[idx]
+            row_values = extract_row(shocked, idx)
             current_sum = row_values.sum()
 
             if relative:
@@ -81,10 +88,7 @@ class MatrixShocker:
             else:
                 row_values *= scaling_factor
 
-            if sp.issparse(shocked):
-                shocked[idx] = sp.csr_matrix(row_values)
-            else:
-                shocked[idx] = row_values
+            assign_row(shocked, idx, row_values)
 
         return self._create_shock_result(
             matrix, shocked, ShockType.ROW_TOTAL, np.mean(magnitudes), row_indices
@@ -100,13 +104,9 @@ class MatrixShocker:
         """
         Shock column totals while preserving relative proportions within columns.
         """
-        shocked = matrix.transpose() if sp.issparse(matrix) else matrix.T
+        shocked = safe_transpose(matrix)
         result = self.shock_row_totals(shocked, col_indices, magnitudes, relative)
-        shocked = (
-            result.shocked_matrix.transpose()
-            if sp.issparse(result.shocked_matrix)
-            else result.shocked_matrix.T
-        )
+        shocked = safe_transpose(result.shocked_matrix)
 
         return self._create_shock_result(
             matrix, shocked, ShockType.COLUMN_TOTAL, np.mean(magnitudes), col_indices
@@ -121,10 +121,7 @@ class MatrixShocker:
         should_preserve = sp.issparse(matrix) or self.preserve_zeros
 
         if should_preserve:
-            if sp.issparse(matrix):
-                rows, cols = matrix.nonzero()
-            else:
-                rows, cols = np.where(matrix != 0)
+            rows, cols = get_nonzero_indices(matrix)
 
             n_candidates = len(rows)
             if n_candidates == 0:
@@ -151,13 +148,7 @@ class MatrixShocker:
         shocked = matrix.copy()
 
         # Calculate number of shocks
-        if sp.issparse(matrix):
-            n_elements = matrix.nnz
-        elif self.preserve_zeros:
-            n_elements = np.count_nonzero(matrix)
-        else:
-            n_elements = matrix.size
-
+        n_elements = count_elements(matrix, self.preserve_zeros)
         n_shocks = int(n_elements * affected_fraction)
 
         shock_rows, shock_cols = self._select_shock_indices(matrix, n_shocks)

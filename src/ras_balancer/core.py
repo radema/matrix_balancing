@@ -328,7 +328,7 @@ class GRASBalancer(MatrixBalancerBase):
 
         if dif > self.tolerance:
             warnings.warn("GRAS algorithm did not converge within the maximum number of iterations")
-            return RASResult(matrix, self.max_iter, False, dif, dif)
+            return RASResult(matrix, self.max_iter, False, dif, dif, r, s)
 
         balanced_matrix = sp.diags(r.flatten()) @ P @ sp.diags(s.flatten()) - self.invd_sparse(
             r

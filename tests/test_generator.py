@@ -3,6 +3,7 @@ import scipy.sparse as sp
 import pytest
 from ras_balancer import balance_matrix, MatrixGenerator, MatrixGenerationResult
 
+
 class TestMatrixGenerator:
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -64,8 +65,8 @@ class TestMatrixGenerator:
         actual_row_sums = matrix.sum(axis=1)
         actual_col_sums = matrix.sum(axis=0)
 
-        assert np.allclose(actual_row_sums.reshape(100,1).flatten(), row_sums, rtol=1e-6)
-        assert np.allclose(actual_col_sums.reshape(100,1).flatten(), col_sums, rtol=1e-6)
+        assert np.allclose(actual_row_sums.reshape(100, 1).flatten(), row_sums, rtol=1e-6)
+        assert np.allclose(actual_col_sums.reshape(100, 1).flatten(), col_sums, rtol=1e-6)
         assert np.allclose(matrix.sum(), self.total_sum, rtol=1e-6)
 
     def test_generate_balanced_sparse_with_gras(self):
@@ -85,8 +86,8 @@ class TestMatrixGenerator:
         actual_row_sums = matrix.sum(axis=1)
         actual_col_sums = matrix.sum(axis=0)
 
-        assert np.allclose(actual_row_sums.reshape(100,1).flatten(), row_sums.flatten(), rtol=1e-6)
-        assert np.allclose(actual_col_sums.reshape(100,1).flatten(), col_sums.flatten(), rtol=1e-6)
+        assert np.allclose(actual_row_sums.reshape(100, 1).flatten(), row_sums.flatten(), rtol=1e-6)
+        assert np.allclose(actual_col_sums.reshape(100, 1).flatten(), col_sums.flatten(), rtol=1e-6)
         assert np.allclose(matrix.sum(), self.total_sum, rtol=1e-6)
 
     def test_invalid_density(self):

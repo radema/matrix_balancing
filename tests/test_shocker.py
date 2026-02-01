@@ -1,7 +1,8 @@
 import numpy as np
 import scipy.sparse as sp
 import pytest
-from ras_balancer import MatrixShocker, ShockType,  MatrixGenerator
+from ras_balancer import MatrixShocker, ShockType, MatrixGenerator
+
 
 class TestMatrixShocker:
     @pytest.fixture(autouse=True)

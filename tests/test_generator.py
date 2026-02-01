@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.sparse as sp
 import pytest
-from ras_balancer import balance_matrix, MatrixGenerator, MatrixGenerationResult
+from ras_balancer import MatrixGenerator
 
 
 class TestMatrixGenerator:

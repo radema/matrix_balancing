@@ -3,7 +3,6 @@ import logging
 from datetime import datetime
 import pytest
 
-
 # Define paths
 LOG_DIR = "logs/test_logs"
 LOG_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

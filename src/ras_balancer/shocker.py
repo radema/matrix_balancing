@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 from .types import ShockType, ShockResult
 from .core import balance_matrix
 
+
 class MatrixShocker:
     """Class for introducing controlled shocks to balanced matrices."""
 
@@ -63,9 +64,7 @@ class MatrixShocker:
         """
         shocked = matrix.copy()
         for idx, magnitude in zip(row_indices, magnitudes):
-            row_values = (
-                shocked[idx].toarray().ravel() if sp.issparse(shocked) else shocked[idx]
-            )
+            row_values = shocked[idx].toarray().ravel() if sp.issparse(shocked) else shocked[idx]
             current_sum = row_values.sum()
 
             if relative:
@@ -85,7 +84,9 @@ class MatrixShocker:
             else:
                 shocked[idx] = row_values
 
-        return self._create_shock_result(matrix, shocked, ShockType.ROW_TOTAL, np.mean(magnitudes), row_indices)
+        return self._create_shock_result(
+            matrix, shocked, ShockType.ROW_TOTAL, np.mean(magnitudes), row_indices
+        )
 
     def shock_column_totals(
         self,
@@ -105,7 +106,36 @@ class MatrixShocker:
             else result.shocked_matrix.T
         )
 
-        return self._create_shock_result(matrix, shocked, ShockType.COLUMN_TOTAL, np.mean(magnitudes), col_indices)
+        return self._create_shock_result(
+            matrix, shocked, ShockType.COLUMN_TOTAL, np.mean(magnitudes), col_indices
+        )
+
+    def _select_shock_indices(
+        self,
+        matrix: Union[NDArray, sp.spmatrix],
+        n_shocks: int,
+    ) -> Tuple[NDArray, NDArray]:
+        """Select indices to shock based on matrix type and preservation settings."""
+        should_preserve = sp.issparse(matrix) or self.preserve_zeros
+
+        if should_preserve:
+            if sp.issparse(matrix):
+                rows, cols = matrix.nonzero()
+            else:
+                rows, cols = np.where(matrix != 0)
+
+            n_candidates = len(rows)
+            if n_candidates == 0:
+                return np.array([], dtype=int), np.array([], dtype=int)
+
+            count = min(n_shocks, n_candidates)
+            indices = np.random.choice(n_candidates, count, replace=False)
+            return rows[indices], cols[indices]
+        else:
+            rows, cols = matrix.shape
+            n_total = rows * cols
+            indices = np.random.choice(n_total, min(n_shocks, n_total), replace=False)
+            return indices // cols, indices % cols
 
     def shock_proportional(
         self,
@@ -117,36 +147,29 @@ class MatrixShocker:
         Introduce proportional shocks to random elements while preserving structure.
         """
         shocked = matrix.copy()
-        rows, cols = matrix.shape
 
+        # Calculate number of shocks
         if sp.issparse(matrix):
-            nnz_rows, nnz_cols = matrix.nonzero()
-            n_shocks = int(len(nnz_rows) * affected_fraction)
-            shock_indices = np.random.choice(len(nnz_rows), n_shocks, replace=False)
-            shock_rows = nnz_rows[shock_indices]
-            shock_cols = nnz_cols[shock_indices]
+            n_elements = matrix.nnz
+        elif self.preserve_zeros:
+            n_elements = np.count_nonzero(matrix)
         else:
-            if self.preserve_zeros:
-                nonzero_mask = matrix != 0
-                n_nonzero = np.sum(nonzero_mask)
-                n_shocks = int(n_nonzero * affected_fraction)
-                shock_indices = np.random.choice(n_nonzero, n_shocks, replace=False)
-                nonzero_positions = np.where(nonzero_mask)
-                shock_rows = nonzero_positions[0][shock_indices]
-                shock_cols = nonzero_positions[1][shock_indices]
-            else:
-                n_elements = matrix.size
-                n_shocks = int(n_elements * affected_fraction)
-                shock_indices = np.random.choice(n_elements, n_shocks, replace=False)
-                shock_rows = shock_indices // cols
-                shock_cols = shock_indices % cols
+            n_elements = matrix.size
+
+        n_shocks = int(n_elements * affected_fraction)
+
+        shock_rows, shock_cols = self._select_shock_indices(matrix, n_shocks)
 
         shock_magnitudes = np.random.uniform(-magnitude, magnitude, len(shock_rows))
         for row, col, value in zip(shock_rows, shock_cols, shock_magnitudes):
             shocked[row, col] *= 1 + value
 
         return self._create_shock_result(
-            matrix, shocked, ShockType.PROPORTIONAL, magnitude, np.column_stack((shock_rows, shock_cols))
+            matrix,
+            shocked,
+            ShockType.PROPORTIONAL,
+            magnitude,
+            np.column_stack((shock_rows, shock_cols)),
         )
 
     def shock_random(
@@ -156,18 +179,10 @@ class MatrixShocker:
         Introduce random shocks to specific cells.
         """
         shocked = matrix.copy()
-        rows, cols = matrix.shape
 
-        if sp.issparse(matrix):
-            nnz_rows, nnz_cols = matrix.nonzero()
-            shock_indices = np.random.choice(len(nnz_rows), n_shocks, replace=False)
-            shock_rows = nnz_rows[shock_indices]
-            shock_cols = nnz_cols[shock_indices]
-        else:
-            shock_rows = np.random.randint(0, rows, n_shocks)
-            shock_cols = np.random.randint(0, cols, n_shocks)
+        shock_rows, shock_cols = self._select_shock_indices(matrix, n_shocks)
 
-        shock_values = np.random.uniform(-magnitude, magnitude, n_shocks)
+        shock_values = np.random.uniform(-magnitude, magnitude, len(shock_rows))
         for row, col, value in zip(shock_rows, shock_cols, shock_values):
             shocked[row, col] += value
 
@@ -186,13 +201,28 @@ class MatrixShocker:
         """
         Apply shocks and rebalance the matrix using the specified method.
         """
-        shocked = self.shock_proportional(matrix, magnitude=0.1, affected_fraction=0.05).shocked_matrix
-        rebalanced = balance_matrix(shocked, row_sums, col_sums, method=method, **kwargs).balanced_matrix
+        shocked = self.shock_proportional(
+            matrix, magnitude=0.1, affected_fraction=0.05
+        ).shocked_matrix
+        rebalanced = balance_matrix(
+            shocked, row_sums, col_sums, method=method, **kwargs
+        ).balanced_matrix
 
         return self._create_shock_result(matrix, rebalanced, ShockType.PROPORTIONAL, 0.1, None)
 
     @staticmethod
+    def _calculate_sums(matrix: Union[NDArray, sp.spmatrix]) -> Tuple[NDArray, NDArray]:
+        """Calculate row and column sums for sparse or dense matrix."""
+        if sp.issparse(matrix):
+            row_sums = matrix.sum(axis=1).A1
+            col_sums = matrix.sum(axis=0).A1
+        else:
+            row_sums = matrix.sum(axis=1)
+            col_sums = matrix.sum(axis=0)
+        return row_sums, col_sums
+
     def _create_shock_result(
+        self,
         original: Union[NDArray, sp.spmatrix],
         shocked: Union[NDArray, sp.spmatrix],
         shock_type: ShockType,
@@ -200,16 +230,8 @@ class MatrixShocker:
         affected_indices: Union[Tuple[int, int], NDArray],
     ) -> ShockResult:
         """Create a ShockResult object from shocked matrix data."""
-        if sp.issparse(original):
-            orig_row_sums = original.sum(axis=1).A1
-            orig_col_sums = original.sum(axis=0).A1
-            new_row_sums = shocked.sum(axis=1).A1
-            new_col_sums = shocked.sum(axis=0).A1
-        else:
-            orig_row_sums = original.sum(axis=1)
-            orig_col_sums = original.sum(axis=0)
-            new_row_sums = shocked.sum(axis=1)
-            new_col_sums = shocked.sum(axis=0)
+        orig_row_sums, orig_col_sums = self._calculate_sums(original)
+        new_row_sums, new_col_sums = self._calculate_sums(shocked)
 
         return ShockResult(
             original_matrix=original,

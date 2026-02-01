@@ -65,24 +65,21 @@
       "allowBackground": false
     },
     "write": {
-      "mode": "allowed-patterns",
-      "allowedPatterns": [
-        ".opencode/**",
+      "mode": "reports-only",
+      "allowed_patterns": [
         "*.md",
         "*.txt",
-        "*.json",
-        "*.yaml",
-        "*.yml",
-        "*.toml"
+        "code-review-*.md"
       ],
-      "disallowedPatterns": [
-        "/etc/**",
-        "/usr/**",
-        "/bin/**",
-        "/boot/**",
-        "/sys/**",
-        "/proc/**"
-      ]
+      "disallowed_patterns": [
+        "src/**/*.py",
+        "tests/**/*.py",
+        "*.json",
+        "pyproject.toml",
+        "setup.py",
+        "__init__.py"
+      ],
+      "reason": "Skills are read-only analysis, never modifies source code"
     }
   },
 

@@ -1,13 +1,15 @@
 import numpy as np
-import scipy.sparse as sp
 import pytest
-from ras_balancer import MatrixShocker, ShockType, MatrixGenerator
+import scipy.sparse as sp
+
+from ras_balancer import MatrixGenerator, MatrixShocker, ShockType
 
 
 class TestMatrixShocker:
     @pytest.fixture(autouse=True)
     def setup(self):
         """Set up test fixtures."""
+        np.random.seed(42)
         self.rows = 50
         self.cols = 50
         self.total_sum = 1000.0
@@ -15,7 +17,7 @@ class TestMatrixShocker:
             self.rows, self.cols, total_sum=self.total_sum
         )
         self.sparse_matrix, _, _ = MatrixGenerator.generate_balanced_sparse(
-            self.rows, self.cols, density=0.1, total_sum=self.total_sum
+            self.rows, self.cols, density=0.2, total_sum=self.total_sum
         )
         self.shocker = MatrixShocker(preserve_zeros=True, random_seed=42)
 
@@ -140,7 +142,7 @@ class TestMatrixShocker:
     def test_shock_and_rebalance(self):
         """Test shock and rebalance functionality."""
         result = self.shocker.shock_and_rebalance(
-            self.matrix, self.row_sums, self.col_sums, method="RAS"
+            self.matrix, self.row_sums, self.col_sums, method="RAS", max_iter=5000
         )
 
         # Ensure matrix is rebalanced

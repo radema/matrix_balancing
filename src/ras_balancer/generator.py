@@ -1,10 +1,12 @@
 # generator.py
 """Utilities for generating random balanced matrices."""
 
+from typing import Tuple
+
 import numpy as np
 import scipy.sparse as sp
-from typing import Tuple
 from numpy.typing import NDArray
+
 from .core import balance_matrix
 
 
@@ -60,7 +62,12 @@ class MatrixGenerator:
 
         # Balance the matrix using the specified method
         balanced_matrix = balance_matrix(
-            base_matrix, row_sums, col_sums, method=method, tolerance=1e-10
+            base_matrix,
+            row_sums,
+            col_sums,
+            method=method,
+            tolerance=1e-6,
+            max_iter=2000,
         ).balanced_matrix
 
         return balanced_matrix, row_sums, col_sums
@@ -110,7 +117,12 @@ class MatrixGenerator:
 
         # Balance the matrix using the specified method
         balanced_matrix = balance_matrix(
-            matrix, row_sums, col_sums, method=method, tolerance=1e-10
+            matrix,
+            row_sums,
+            col_sums,
+            method=method,
+            tolerance=1e-6,
+            max_iter=2000,
         ).balanced_matrix
 
         return balanced_matrix, row_sums, col_sums

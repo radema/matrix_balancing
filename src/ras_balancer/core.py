@@ -1,13 +1,15 @@
 # core.py
 """Core functionality for matrix balancing using the RAS algorithm."""
 
-import numpy as np
-from numpy.typing import NDArray
-import scipy.sparse as sp
 import logging
 import warnings
-from typing import Union, Optional, List, Set, Tuple
-from .types import BalanceStatus, BalanceCheckResult, RASResult
+from typing import List, Optional, Set, Tuple, Union
+
+import numpy as np
+import scipy.sparse as sp
+from numpy.typing import NDArray
+
+from .types import BalanceCheckResult, BalanceStatus, RASResult
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -548,7 +550,6 @@ class MRGRASBalancer(MatrixBalancerBase):
         epsilon = kwargs.get("tolerance", self.tolerance)
 
         for iteration in range(max_iter):
-
             T = G.T @ t @ Q.T
 
             pr = (T * P).T @ r

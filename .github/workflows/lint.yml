@@ -3,38 +3,38 @@ name: Python Linting
 on:
   push:
     branches:
-      - main  # You can also specify other branches like 'develop'
+      - main
   pull_request:
     branches:
-      - main  # Trigger the linting when a PR is made to the main branch
+      - main
 
 jobs:
   lint:
-    runs-on: ubuntu-latest  # Runs on the latest Ubuntu runner
+    runs-on: ubuntu-latest
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3  # This step checks out the code in your repository
+      uses: actions/checkout@v3
 
     - name: Set up Python
       uses: actions/setup-python@v3
       with:
-        python-version: '3.10'  # You can specify any Python version you are using
+        python-version: '3.10'
 
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install black flake8  # Install black and flake8
+        python -m pip install poetry
+        poetry install
 
     - name: Run black (code formatting)
       run: |
-        black --check .  # This will check the formatting but not change the code
+        poetry run black --check .
 
     - name: Run flake8 (linting)
       run: |
-        flake8 . --max-line-length=100  # You can customize the max-line-length or add other options
+        poetry run flake8 .
 
     - name: Post linting status
-      if: failure()  # If either flake8 or black fails, this will fail the workflow
+      if: failure()
       run: |
         echo "Linting failed. Please fix the issues above and try again."

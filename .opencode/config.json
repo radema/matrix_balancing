@@ -37,38 +37,52 @@
 
   "tools": {
     "bash": {
-      "mode": "read-only",
-      "allowed_commands": [
-        "ls",
-        "wc",
-        "head",
-        "tail",
-        "test -f"
+      "mode": "restricted",
+      "allowedCommands": [
+        "git", "ls", "cat", "head", "tail", "grep", "find", "wc", "which",
+        "uv", "pytest", "python", "python3", "pip", "npm", "node",
+        "mkdir", "rm", "cp", "mv", "touch", "chmod",
+        "ps", "kill", "top", "htop", "df", "du", "free",
+        "curl", "wget"
       ],
-      "disallowed_commands": [
-        "sed",
-        "awk",
-        "grep",
-        "find"
+      "allowedPaths": [
+        "./**",
+        "/tmp/**",
+        "/var/tmp/**"
       ],
-      "reason": "Use read() and grep() tools instead"
+      "allowedPathsDenied": [
+        "/etc/**", "/usr/**", "/bin/**", "/boot/**", "/sys/**", "/proc/**"
+      ],
+      "restrictedCommands": [
+        "sudo", "su", "passwd", "chsh", "fdisk", "mkfs", "mount", 
+        "umount", "iptables", "ufw", "systemctl", "service", "init",
+        "dd", "shred", "rm -rf /"
+      ],
+      "contextAwareValidation": true,
+      "maxCommandLength": 800,
+      "allowPipes": true,
+      "allowRedirects": true,
+      "allowBackground": false
     },
     "write": {
-      "mode": "reports-only",
-      "allowed_patterns": [
+      "mode": "allowed-patterns",
+      "allowedPatterns": [
+        ".opencode/**",
         "*.md",
         "*.txt",
-        "code-review-*.md"
-      ],
-      "disallowed_patterns": [
-        "src/**/*.py",
-        "tests/**/*.py",
         "*.json",
-        "pyproject.toml",
-        "setup.py",
-        "__init__.py"
+        "*.yaml",
+        "*.yml",
+        "*.toml"
       ],
-      "reason": "Skills are read-only analysis, never modifies source code"
+      "disallowedPatterns": [
+        "/etc/**",
+        "/usr/**",
+        "/bin/**",
+        "/boot/**",
+        "/sys/**",
+        "/proc/**"
+      ]
     }
   },
 

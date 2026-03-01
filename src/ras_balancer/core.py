@@ -290,17 +290,20 @@ class GRASBalancer(MatrixBalancerBase):
         m, n = P.shape
         r = np.ones((m, 1))
 
+        # Pre-allocate ones arrays and pre-reshape target sums to avoid repeated allocations
+        ones_m = np.ones((m, 1))
+        ones_n = np.ones((n, 1))
+        u_reshaped = target_row_sums.reshape(-1, 1)
+        v_reshaped = target_col_sums.reshape(-1, 1)
+
         # Initial calculation for s
         pr = P.T @ r
-        nr = N.T @ self.invd_sparse(r) @ np.ones((m, 1))
+        nr = N.T @ self.invd_sparse(r) @ ones_m
 
-        s = self.invd_sparse(2 * pr) @ (
-            target_col_sums.reshape(-1, 1)
-            + np.sqrt(target_col_sums.reshape(-1, 1) ** 2 + 4 * pr * nr)
-        )
+        s = self.invd_sparse(2 * pr) @ (v_reshaped + np.sqrt(v_reshaped**2 + 4 * pr * nr))
         # Handle possible NaNs
         s = np.nan_to_num(s, nan=self.EPSILON, posinf=self.EPSILON, neginf=self.EPSILON)
-        ss = -self.invd_sparse(target_col_sums.reshape(-1, 1)) @ nr
+        ss = -self.invd_sparse(v_reshaped) @ nr
         s[pr.flatten() == 0] = ss[pr.flatten() == 0]
 
         s_old = s
@@ -312,26 +315,20 @@ class GRASBalancer(MatrixBalancerBase):
             # Update row and column scaling factors
 
             ps = P @ s
-            ns = N @ self.invd_sparse(s) @ np.ones((n, 1))
-            r = self.invd_sparse(2 * ps) @ (
-                target_row_sums.reshape(-1, 1)
-                + np.sqrt(target_row_sums.reshape(-1, 1) ** 2 + 4 * ps * ns)
-            )
+            ns = N @ self.invd_sparse(s) @ ones_n
+            r = self.invd_sparse(2 * ps) @ (u_reshaped + np.sqrt(u_reshaped**2 + 4 * ps * ns))
             # Handle possible NaNs
             r = np.nan_to_num(r, nan=self.EPSILON, posinf=self.EPSILON, neginf=self.EPSILON)
-            rr = -self.invd_sparse(target_row_sums.reshape(-1, 1)) @ ns
+            rr = -self.invd_sparse(u_reshaped) @ ns
             r[ps.flatten() == 0] = rr[ps.flatten() == 0]
 
             pr = P.T @ r
-            nr = N.T @ self.invd_sparse(r) @ np.ones((m, 1))
+            nr = N.T @ self.invd_sparse(r) @ ones_m
 
-            s = self.invd_sparse(2 * pr) @ (
-                target_col_sums.reshape(-1, 1)
-                + np.sqrt(target_col_sums.reshape(-1, 1) ** 2 + 4 * pr * nr)
-            )
+            s = self.invd_sparse(2 * pr) @ (v_reshaped + np.sqrt(v_reshaped**2 + 4 * pr * nr))
             # Handle possible NaNs
             s = np.nan_to_num(s, nan=self.EPSILON, posinf=self.EPSILON, neginf=self.EPSILON)
-            ss = -self.invd_sparse(target_col_sums.reshape(-1, 1)) @ nr
+            ss = -self.invd_sparse(v_reshaped) @ nr
             s[pr.flatten() == 0] = ss[pr.flatten() == 0]
 
             s_dif = np.max(np.abs(s - s_old))

@@ -154,8 +154,9 @@ class MatrixShocker:
         shock_rows, shock_cols = self._select_shock_indices(matrix, n_shocks)
 
         shock_magnitudes = np.random.uniform(-magnitude, magnitude, len(shock_rows))
-        for row, col, value in zip(shock_rows, shock_cols, shock_magnitudes):
-            shocked[row, col] *= 1 + value
+        shocked[shock_rows, shock_cols] = np.multiply(
+            shocked[shock_rows, shock_cols], 1 + shock_magnitudes
+        )
 
         return self._create_shock_result(
             matrix,
@@ -176,8 +177,7 @@ class MatrixShocker:
         shock_rows, shock_cols = self._select_shock_indices(matrix, n_shocks)
 
         shock_values = np.random.uniform(-magnitude, magnitude, len(shock_rows))
-        for row, col, value in zip(shock_rows, shock_cols, shock_values):
-            shocked[row, col] += value
+        shocked[shock_rows, shock_cols] += shock_values
 
         return self._create_shock_result(
             matrix, shocked, ShockType.RANDOM, magnitude, np.column_stack((shock_rows, shock_cols))

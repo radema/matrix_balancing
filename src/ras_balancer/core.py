@@ -583,8 +583,12 @@ class MRGRASBalancer(MatrixBalancerBase):
             r_new[ps.flatten() == 0] = rr[ps.flatten() == 0]
 
             # update t
-            pt = G @ np.diag(r_new.flatten()) @ P @ np.diag(s_new.flatten()) @ Q
-            nt = G @ self.invd_sparse(r_new) @ N @ self.invd_sparse(s_new) @ Q
+            if sp.issparse(P):
+                pt = G @ (P.multiply(r_new).multiply(s_new.T)) @ Q
+                nt = G @ (N.multiply(1.0 / r_new).multiply(1.0 / s_new.T)) @ Q
+            else:
+                pt = G @ (r_new * P * s_new.T) @ Q
+                nt = G @ (N / r_new / s_new.T) @ Q
 
             with np.errstate(divide="ignore", invalid="ignore"):
                 t_new = (np.where(pt != 0, 1.0 / pt, 1.0) / 2.0) * (W + np.sqrt(W**2 + 4 * pt * nt))

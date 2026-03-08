@@ -166,8 +166,11 @@ class RASBalancer(MatrixBalancerBase):
         use_sparse = self._should_use_sparse(matrix)
 
         # Convert to sparse if needed
-        if use_sparse and not sp.issparse(matrix):
-            matrix = sp.csr_matrix(matrix)
+        if use_sparse:
+            if not sp.issparse(matrix):
+                matrix = sp.csr_matrix(matrix)
+            else:
+                matrix = matrix.tocsr()
         elif not use_sparse and sp.issparse(matrix):
             matrix = matrix.toarray()
 
@@ -184,10 +187,13 @@ class RASBalancer(MatrixBalancerBase):
         for iteration in range(self.max_iter):
             # Row scaling
             row_sums = X.sum(axis=1).A1 if use_sparse else X.sum(axis=1)
-            r = np.divide(target_row_sums, row_sums, where=row_sums != 0)
+            r = np.divide(
+                target_row_sums, row_sums, out=np.ones_like(target_row_sums), where=row_sums != 0
+            )
 
             if use_sparse:
-                X = sp.diags(r) @ X
+                # Efficient in-place row scaling for CSR
+                X.data *= np.repeat(r, np.diff(X.indptr))
             else:
                 # Process large dense matrices in chunks
                 if X.shape[0] > self.chunk_size:
@@ -201,10 +207,13 @@ class RASBalancer(MatrixBalancerBase):
 
             # Column scaling
             col_sums = X.sum(axis=0).A1 if use_sparse else X.sum(axis=0)
-            s = np.divide(target_col_sums, col_sums, where=col_sums != 0)
+            s = np.divide(
+                target_col_sums, col_sums, out=np.ones_like(target_col_sums), where=col_sums != 0
+            )
 
             if use_sparse:
-                X = X @ sp.diags(s)
+                # Efficient in-place column scaling for CSR
+                X.data *= s[X.indices]
             else:
                 X = np.multiply(X, s)
 
@@ -291,19 +300,25 @@ class GRASBalancer(MatrixBalancerBase):
         r = np.ones((m, 1))
 
         # Pre-allocate ones arrays and pre-reshape target sums to avoid repeated allocations
-        ones_m = np.ones((m, 1))
-        ones_n = np.ones((n, 1))
         u_reshaped = target_row_sums.reshape(-1, 1)
         v_reshaped = target_col_sums.reshape(-1, 1)
 
         # Initial calculation for s
         pr = P.T @ r
-        nr = N.T @ self.invd_sparse(r) @ ones_m
+        # N.T @ (1/r)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            inv_r = np.where(r != 0, 1.0 / r, 1.0)
+        nr = N.T @ inv_r
 
-        s = self.invd_sparse(2 * pr) @ (v_reshaped + np.sqrt(v_reshaped**2 + 4 * pr * nr))
+        # (1 / (2 * pr)) * (v + sqrt(...))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            inv_2pr = np.where(pr != 0, 1.0 / (2.0 * pr), 1.0)
+        s = inv_2pr * (v_reshaped + np.sqrt(v_reshaped**2 + 4 * pr * nr))
         # Handle possible NaNs
         s = np.nan_to_num(s, nan=self.EPSILON, posinf=self.EPSILON, neginf=self.EPSILON)
-        ss = -self.invd_sparse(v_reshaped) @ nr
+        with np.errstate(divide="ignore", invalid="ignore"):
+            inv_v = np.where(v_reshaped != 0, 1.0 / v_reshaped, 1.0)
+        ss = -inv_v * nr
         s[pr.flatten() == 0] = ss[pr.flatten() == 0]
 
         s_old = s
@@ -315,20 +330,33 @@ class GRASBalancer(MatrixBalancerBase):
             # Update row and column scaling factors
 
             ps = P @ s
-            ns = N @ self.invd_sparse(s) @ ones_n
-            r = self.invd_sparse(2 * ps) @ (u_reshaped + np.sqrt(u_reshaped**2 + 4 * ps * ns))
+            # N @ (1/s)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_s = np.where(s != 0, 1.0 / s, 1.0)
+            ns = N @ inv_s
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_2ps = np.where(ps != 0, 1.0 / (2.0 * ps), 1.0)
+            r = inv_2ps * (u_reshaped + np.sqrt(u_reshaped**2 + 4 * ps * ns))
             # Handle possible NaNs
             r = np.nan_to_num(r, nan=self.EPSILON, posinf=self.EPSILON, neginf=self.EPSILON)
-            rr = -self.invd_sparse(u_reshaped) @ ns
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_u = np.where(u_reshaped != 0, 1.0 / u_reshaped, 1.0)
+            rr = -inv_u * ns
             r[ps.flatten() == 0] = rr[ps.flatten() == 0]
 
             pr = P.T @ r
-            nr = N.T @ self.invd_sparse(r) @ ones_m
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_r = np.where(r != 0, 1.0 / r, 1.0)
+            nr = N.T @ inv_r
 
-            s = self.invd_sparse(2 * pr) @ (v_reshaped + np.sqrt(v_reshaped**2 + 4 * pr * nr))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_2pr = np.where(pr != 0, 1.0 / (2.0 * pr), 1.0)
+            s = inv_2pr * (v_reshaped + np.sqrt(v_reshaped**2 + 4 * pr * nr))
             # Handle possible NaNs
             s = np.nan_to_num(s, nan=self.EPSILON, posinf=self.EPSILON, neginf=self.EPSILON)
-            ss = -self.invd_sparse(v_reshaped) @ nr
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_v = np.where(v_reshaped != 0, 1.0 / v_reshaped, 1.0)
+            ss = -inv_v * nr
             s[pr.flatten() == 0] = ss[pr.flatten() == 0]
 
             s_dif = np.max(np.abs(s - s_old))
@@ -360,9 +388,26 @@ class GRASBalancer(MatrixBalancerBase):
             balanced_matrix = P - N
             return RASResult(balanced_matrix, self.max_iter, False, dif, dif, r, s)
 
-        balanced_matrix = sp.diags(r.flatten()) @ P @ sp.diags(s.flatten()) - self.invd_sparse(
-            r
-        ) @ N @ self.invd_sparse(s)
+        rf = r.flatten()
+        sf = s.flatten()
+        with np.errstate(divide="ignore", invalid="ignore"):
+            inv_rf = np.where(rf != 0, 1.0 / rf, 1.0)
+            inv_sf = np.where(sf != 0, 1.0 / sf, 1.0)
+
+        if sp.issparse(P):
+            # Efficient scaling for sparse matrices
+            P_scaled = P.copy()
+            P_scaled.data *= rf.repeat(np.diff(P_scaled.indptr))
+            P_scaled.data *= sf[P_scaled.indices]
+
+            N_scaled = N.copy()
+            N_scaled.data *= inv_rf.repeat(np.diff(N_scaled.indptr))
+            N_scaled.data *= inv_sf[N_scaled.indices]
+
+            balanced_matrix = P_scaled - N_scaled
+        else:
+            balanced_matrix = rf[:, np.newaxis] * P * sf - inv_rf[:, np.newaxis] * N * inv_sf
+
         return RASResult(balanced_matrix, iteration, True, dif, dif, r, s)
 
     def balance(
@@ -400,6 +445,11 @@ class GRASBalancer(MatrixBalancerBase):
         self._validate_inputs(matrix, target_row_sums, target_col_sums)
 
         P, N = self._prepare_gras_matrices(matrix, bias_matrix, bias_method)
+
+        # Convert to CSR for efficient scaling if sparse
+        if sp.issparse(P):
+            P = P.tocsr()
+            N = N.tocsr()
 
         r, s, dif, iteration = self._gras_iteration(P, N, target_row_sums, target_col_sums)
 
@@ -495,11 +545,27 @@ class MRGRASBalancer(MatrixBalancerBase):
         """
         Updates the matrix using the MRGRAS balancing approach with sparse matrices.
         """
+        rf = r.flatten()
+        sf = s.flatten()
         with np.errstate(divide="ignore", invalid="ignore"):
+            inv_rf = np.where(rf != 0, 1.0 / rf, 1.0)
+            inv_sf = np.where(sf != 0, 1.0 / sf, 1.0)
             invd_T = np.where(T != 0, 1.0 / T, 1.0)
-        return sp.diags(r.flatten()) @ (P * T) @ sp.diags(s.flatten()) - sp.diags(
-            1.0 / r.flatten()
-        ) @ (N * invd_T) @ sp.diags(1.0 / s.flatten())
+
+        if sp.issparse(P):
+            # Efficient scaling for sparse matrices
+            # multiply may return COO or CSR, so always convert to CSR for safe scaling
+            P_scaled = P.multiply(T).tocsr()
+            P_scaled.data *= rf.repeat(np.diff(P_scaled.indptr))
+            P_scaled.data *= sf[P_scaled.indices]
+
+            N_scaled = N.multiply(invd_T).tocsr()
+            N_scaled.data *= inv_rf.repeat(np.diff(N_scaled.indptr))
+            N_scaled.data *= inv_sf[N_scaled.indices]
+
+            return P_scaled - N_scaled
+        else:
+            return rf[:, np.newaxis] * (P * T) * sf - inv_rf[:, np.newaxis] * (N * invd_T) * inv_sf
 
     def balance(
         self,
@@ -533,8 +599,8 @@ class MRGRASBalancer(MatrixBalancerBase):
             W = np.ones(matrix.shape)
 
         if sp.issparse(matrix):
-            P = matrix.maximum(0)
-            N = matrix.minimum(0).multiply(-1)
+            P = matrix.maximum(0).tocsr()
+            N = matrix.minimum(0).multiply(-1).tocsr()
         else:
             P = np.maximum(matrix, 0)
             N = np.maximum(-matrix, 0)
@@ -542,8 +608,6 @@ class MRGRASBalancer(MatrixBalancerBase):
         r = np.ones((matrix.shape[0], 1))
         t = np.ones(W.shape)
         s = np.ones((matrix.shape[1], 1))
-        ones_m = np.ones((matrix.shape[0], 1))
-        ones_n = np.ones((matrix.shape[1], 1))
 
         max_iter = kwargs.get("max_iter", self.max_iter)
         epsilon = kwargs.get("tolerance", self.tolerance)
@@ -552,22 +616,34 @@ class MRGRASBalancer(MatrixBalancerBase):
             T = G.T @ t @ Q.T
 
             pr = (T * P).T @ r
-            nr = (np.where(T != 0, 1.0 / T, 1.0) * N).T @ self.invd_sparse(r) @ ones_m
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_r = np.where(r != 0, 1.0 / r, 1.0)
+            nr = (np.where(T != 0, 1.0 / T, 1.0) * N).T @ inv_r
 
-            s_new = self.invd_sparse(2 * pr) @ (v + np.sqrt(v**2 + 4 * pr * nr))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_2pr = np.where(pr != 0, 1.0 / (2.0 * pr), 1.0)
+            s_new = inv_2pr * (v + np.sqrt(v**2 + 4 * pr * nr))
 
-            ss = -self.invd_sparse(v) @ nr
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_v = np.where(v != 0, 1.0 / v, 1.0)
+            ss = -inv_v * nr
 
             s_new = np.nan_to_num(s_new, nan=1e-10)
 
             s_new[pr.flatten() == 0] = ss[pr.flatten() == 0]
 
             ps = (P * T) @ s_new
-            ns = (np.where(T != 0, 1.0 / T, 1.0) * N) @ self.invd_sparse(s_new) @ ones_n
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_s_new = np.where(s_new != 0, 1.0 / s_new, 1.0)
+            ns = (np.where(T != 0, 1.0 / T, 1.0) * N) @ inv_s_new
 
-            r_new = self.invd_sparse(2 * ps) @ (u + np.sqrt(u**2 + 4 * ps * ns))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_2ps = np.where(ps != 0, 1.0 / (2.0 * ps), 1.0)
+            r_new = inv_2ps * (u + np.sqrt(u**2 + 4 * ps * ns))
 
-            rr = -self.invd_sparse(u) @ ns
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_u = np.where(u != 0, 1.0 / u, 1.0)
+            rr = -inv_u * ns
 
             r_new = np.nan_to_num(r_new, nan=1e-10)
 

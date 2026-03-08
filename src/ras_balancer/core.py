@@ -542,6 +542,8 @@ class MRGRASBalancer(MatrixBalancerBase):
         r = np.ones((matrix.shape[0], 1))
         t = np.ones(W.shape)
         s = np.ones((matrix.shape[1], 1))
+        ones_m = np.ones((matrix.shape[0], 1))
+        ones_n = np.ones((matrix.shape[1], 1))
 
         max_iter = kwargs.get("max_iter", self.max_iter)
         epsilon = kwargs.get("tolerance", self.tolerance)
@@ -550,11 +552,7 @@ class MRGRASBalancer(MatrixBalancerBase):
             T = G.T @ t @ Q.T
 
             pr = (T * P).T @ r
-            nr = (
-                (np.where(T != 0, 1.0 / T, 1.0) * N).T
-                @ self.invd_sparse(r)
-                @ np.ones((matrix.shape[0], 1))
-            )
+            nr = (np.where(T != 0, 1.0 / T, 1.0) * N).T @ self.invd_sparse(r) @ ones_m
 
             s_new = self.invd_sparse(2 * pr) @ (v + np.sqrt(v**2 + 4 * pr * nr))
 
@@ -565,11 +563,7 @@ class MRGRASBalancer(MatrixBalancerBase):
             s_new[pr.flatten() == 0] = ss[pr.flatten() == 0]
 
             ps = (P * T) @ s_new
-            ns = (
-                (np.where(T != 0, 1.0 / T, 1.0) * N)
-                @ self.invd_sparse(s_new)
-                @ np.ones((matrix.shape[1], 1))
-            )
+            ns = (np.where(T != 0, 1.0 / T, 1.0) * N) @ self.invd_sparse(s_new) @ ones_n
 
             r_new = self.invd_sparse(2 * ps) @ (u + np.sqrt(u**2 + 4 * ps * ns))
 
